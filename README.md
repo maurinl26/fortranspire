@@ -5,7 +5,7 @@
 **Agent de transformation Fortran scientifique vers GPU (OpenACC) et JAX.**  
 Propulsé par Azure Mistral-Large · LangGraph · Loki (ECMWF)
 
-[![License: Proprietary](https://img.shields.io/badge/License-Proprietary-red.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/MCP-Ready-green.svg)](https://modelcontextprotocol.io/)
 
