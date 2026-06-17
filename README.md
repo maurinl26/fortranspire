@@ -171,9 +171,45 @@ la compréhension sémantique est indispensable (extraction de kernels, généra
 git clone <repo>
 cd coding-agent
 cp .env.example .env
-# Renseigner AZURE_MISTRAL_ENDPOINT et AZURE_MISTRAL_API_KEY
 uv sync
 ```
+
+### Connecter un endpoint Mistral
+
+L'agent appelle un endpoint Mistral OpenAI-compatible. Configurer dans `.env` :
+
+```bash
+# Endpoint Azure AI Studio (Models-as-a-Service)
+AZURE_MISTRAL_ENDPOINT="https://Mistral-large-<workspace>.services.ai.azure.com/models"
+AZURE_MISTRAL_API_KEY="<votre_clef>"
+AZURE_MISTRAL_MODEL="mistral-large-latest"   # ou mistral-large-2402, mistral-nemo, etc.
+
+# Paramètres génération (valeurs conseillées pour la transformation de code)
+LLM_TEMPERATURE=0.0
+LLM_TOP_P=0.9
+LLM_NUM_PREDICT=2048
+```
+
+**Provisionner l'endpoint sur Azure :**
+
+```bash
+# Option 1 — Infrastructure as Code (provisionne aussi VM CPU + VM GPU)
+cd infrastructure/ && terraform init && terraform apply
+
+# Option 2 — Déploiement manuel via Azure AI Studio
+#   1. Azure Portal → AI Studio → Model catalog → Mistral-Large
+#   2. "Deploy" en mode Serverless API (MaaS, pay-per-token)
+#   3. Récupérer l'URL `…services.ai.azure.com/models` et la clef
+```
+
+**Vérification :**
+
+```bash
+uv run python -c "from local_code_agent.llm import get_llm; print(get_llm().invoke('ping').content)"
+# → réponse du modèle, ou erreur d'auth / endpoint
+```
+
+> Tout endpoint OpenAI-compatible exposant l'API Mistral fonctionne (Azure MaaS, La Plateforme Mistral, vLLM auto-hébergé) — seule la variable `AZURE_MISTRAL_ENDPOINT` change.
 
 ### Usage CLI
 
@@ -206,6 +242,45 @@ docker compose up -d --build
 ```
 
 Outils MCP : `translate_kernel_gpu`, `translate_kernel` (JAX), `ask_agent`, `profile_kernels`.
+
+### Démarrer sur un repo Fortran (mode autonome)
+
+Le serveur MCP peut traiter un repo Fortran de bout en bout sans intervention humaine — il extrait les kernels, annote PURE/ELEMENTAL, ajoute les directives OpenACC, génère le wrapper Cython (packaging `scikit-build`), et compile/valide tant qu'un environnement de build est disponible.
+
+**Pré-requis d'environnement :**
+
+| Ressource | Minimum (CPU) | Idéal (GPU) |
+|-----------|---------------|-------------|
+| Orchestration agent + Loki AST + LLM calls | ✅ requis | ✅ |
+| `gfortran` — validation syntaxe + tests CPU | ✅ requis | ✅ |
+| `nvfortran` (NVIDIA HPC SDK) — compilation `-acc -gpu=ccXX` | ❌ (skip GPU step) | ✅ requis |
+| GPU device (T4, A100, …) — benchmark + nsys profile | ❌ | ✅ requis |
+
+> En mode CPU seul, le pipeline va jusqu'à la génération du Fortran OpenACC + Cython et émet `output/compile_gpu.sh` — la compilation GPU est différée sur un nœud équipé (Pangea, Azure NC, GENCI).
+
+**Lancement autonome :**
+
+```bash
+export AGENT_INTERACTION_MODE=auto          # pas de pause Human-in-the-Loop
+export AGENT_WORKSPACE=/path/to/fortran/repo
+export AGENT_MAX_ITERATIONS=15
+
+# Option A — un kernel à la fois (CLI)
+uv run agent-gpu $AGENT_WORKSPACE/src/seismic_cpml_2d.f90
+
+# Option B — sweep récursif sur tout le repo
+find $AGENT_WORKSPACE -name "*.f90" -print0 | xargs -0 -n1 uv run agent-gpu
+
+# Option C — MCP en daemon, l'IDE/CI pilote via translate_kernel_gpu
+docker compose up -d --build
+```
+
+Les artefacts arrivent dans `output/` (voir ci-dessous) ; sur un nœud GPU, ajouter :
+
+```bash
+AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh         # déploie + compile sur GPU distant
+AZURE_GPU_HOST=<ip> bash scripts/bench_gpu.sh <ref>  # mesure le speedup CPU vs GPU
+```
 
 ### Sorties
 
@@ -1077,4 +1152,4 @@ surrogate = FNO(modes=16, width=64)
 
 ## 📜 Licence
 
-Propriétaire — Usage TotalEnergies Exascale.
+Apache License 2.0 — voir [LICENSE](LICENSE).
