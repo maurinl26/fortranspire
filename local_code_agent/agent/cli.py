@@ -17,7 +17,7 @@ def translate_file(filepath: str):
     """Phase 2 — pipeline JAX (legacy)."""
     print(f"\n🔬 JAX Translation Pipeline")
     print(f"   Input : {filepath}")
-    print(f"   Model : Mistral-Large (Azure MaaS)\n")
+    print(f"   Model : Mistral-Large (endpoint souverain)\n")
     code = _read_file(filepath)
     initial_state = {
         "fortran_filepath": filepath,
@@ -42,7 +42,7 @@ def translate_file_gpu(filepath: str):
     print(f"  🚀 Fortran → GPU Pipeline (Phase 1)")
     print(f"{'═' * 60}")
     print(f"  📂 Input  : {filepath}")
-    print(f"  🤖 Model  : Mistral-Large (Azure MaaS)")
+    print(f"  🤖 Model  : Mistral-Large (endpoint souverain)")
     print(f"  📦 Output : output/fortran_gpu/  +  output/cython/")
     print(f"{'─' * 60}")
     print(f"  Steps:")

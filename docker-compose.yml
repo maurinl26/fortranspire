@@ -10,8 +10,9 @@ services:
       # Monte le workspace en lecture-écriture dans le conteneur
       - ${AGENT_WORKSPACE:-.}:/workspace
     environment:
-      AZURE_MISTRAL_ENDPOINT: ${AZURE_MISTRAL_ENDPOINT}
-      AZURE_MISTRAL_API_KEY: ${AZURE_MISTRAL_API_KEY}
+      MISTRAL_ENDPOINT: ${MISTRAL_ENDPOINT:-https://api.mistral.ai/v1}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY}
+      MISTRAL_MODEL: ${MISTRAL_MODEL:-mistral-large-latest}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.0}
       AGENT_MAX_ITERATIONS: ${AGENT_MAX_ITERATIONS:-15}
       AGENT_WORKSPACE: /workspace

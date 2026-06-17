@@ -8,8 +8,8 @@ load_dotenv()
 
 @dataclass
 class AgentConfig:
-    # --- Modèle Azure par défaut ---
-    model_name: str = os.getenv("AZURE_MISTRAL_MODEL", "mistral-large-latest")
+    # --- Modèle Mistral par défaut (La Plateforme ou endpoint compatible) ---
+    model_name: str = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 
     # --- Paramètres de génération ---
     temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.2"))

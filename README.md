@@ -3,7 +3,7 @@
 # 🚀 Fortran → GPU + JAX
 
 **Agent de transformation Fortran scientifique vers GPU (OpenACC) et JAX.**  
-Propulsé par Azure Mistral-Large · LangGraph · Loki (ECMWF)
+Propulsé par Mistral-Large (endpoint souverain) · LangGraph · Loki (ECMWF)
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
@@ -162,7 +162,7 @@ la compréhension sémantique est indispensable (extraction de kernels, généra
 - Python 3.12+, [uv](https://github.com/astral-sh/uv)
 - `gfortran` (vérification syntaxe locale) : `brew install gcc`
 - Loki installé localement (`./loki`) — ECMWF Fortran AST toolkit
-- Azure Mistral-Large endpoint + API key (`.env`)
+- Endpoint Mistral OpenAI-compatible + API key (`.env`) — La Plateforme Mistral par défaut, ou vLLM/TGI auto-hébergé
 - `nvfortran` (NVIDIA HPC SDK) ou VM GPU Azure pour la compilation GPU
 
 ### Installation
@@ -174,42 +174,51 @@ cp .env.example .env
 uv sync
 ```
 
-### Connecter un endpoint Mistral
+### Connecter un endpoint Mistral (souverain)
 
-L'agent appelle un endpoint Mistral OpenAI-compatible. Configurer dans `.env` :
+L'agent appelle un endpoint Mistral OpenAI-compatible — **directement, sans passer par un hyperscaler**. Deux chemins recommandés selon le niveau de souveraineté visé.
+
+#### A — La Plateforme Mistral (hébergement EU, opéré par Mistral AI)
 
 ```bash
-# Endpoint Azure AI Studio (Models-as-a-Service)
-AZURE_MISTRAL_ENDPOINT="https://Mistral-large-<workspace>.services.ai.azure.com/models"
-AZURE_MISTRAL_API_KEY="<votre_clef>"
-AZURE_MISTRAL_MODEL="mistral-large-latest"   # ou mistral-large-2402, mistral-nemo, etc.
+# .env
+MISTRAL_ENDPOINT="https://api.mistral.ai/v1"
+MISTRAL_API_KEY="<clef_créée_sur_console.mistral.ai>"
+MISTRAL_MODEL="mistral-large-latest"          # ou codestral-latest, mistral-nemo, ...
 
-# Paramètres génération (valeurs conseillées pour la transformation de code)
 LLM_TEMPERATURE=0.0
 LLM_TOP_P=0.9
 LLM_NUM_PREDICT=2048
 ```
 
-**Provisionner l'endpoint sur Azure :**
+Clef à créer sur [console.mistral.ai](https://console.mistral.ai/) → *API Keys*. Facturation au token, infrastructure et données restent en Europe.
+
+#### B — Auto-hébergement on-prem ou cloud privé (souveraineté complète)
+
+Pour un cluster interne (Pangea, GENCI, datacenter privé), exposer le modèle via [vLLM](https://github.com/vllm-project/vllm), [TGI](https://github.com/huggingface/text-generation-inference) ou [Ollama](https://ollama.com/) — tous fournissent une API OpenAI-compatible.
 
 ```bash
-# Option 1 — Infrastructure as Code (provisionne aussi VM CPU + VM GPU)
-cd infrastructure/ && terraform init && terraform apply
-
-# Option 2 — Déploiement manuel via Azure AI Studio
-#   1. Azure Portal → AI Studio → Model catalog → Mistral-Large
-#   2. "Deploy" en mode Serverless API (MaaS, pay-per-token)
-#   3. Récupérer l'URL `…services.ai.azure.com/models` et la clef
+# Exemple — vLLM avec Mistral-Large-Instruct-2407 (poids HuggingFace)
+vllm serve mistralai/Mistral-Large-Instruct-2407 \
+  --host 0.0.0.0 --port 8000 \
+  --tensor-parallel-size 4         # 4× A100 80GB
 ```
 
-**Vérification :**
+```bash
+# .env côté agent
+MISTRAL_ENDPOINT="http://<host>:8000/v1"
+MISTRAL_API_KEY="dummy"            # vLLM ignore la clef sauf si --api-key est passé
+MISTRAL_MODEL="mistralai/Mistral-Large-Instruct-2407"
+```
+
+#### Vérification
 
 ```bash
 uv run python -c "from local_code_agent.llm import get_llm; print(get_llm().invoke('ping').content)"
 # → réponse du modèle, ou erreur d'auth / endpoint
 ```
 
-> Tout endpoint OpenAI-compatible exposant l'API Mistral fonctionne (Azure MaaS, La Plateforme Mistral, vLLM auto-hébergé) — seule la variable `AZURE_MISTRAL_ENDPOINT` change.
+> Tout endpoint exposant `POST {base}/chat/completions` au format OpenAI fonctionne. Seule la variable `MISTRAL_ENDPOINT` change selon le déploiement.
 
 ### Usage CLI
 
@@ -367,7 +376,7 @@ Voir [TUTORIAL_IDE.md](TUTORIAL_IDE.md) pour le tutoriel complet.
 
 | Composant | Coût unitaire | Par pipeline | Par mois (100 pipelines) |
 |-----------|--------------|-------------|--------------------------|
-| Mistral-Large-3 (Azure MaaS) | $3/1M tokens input | ~$0.06 (4 appels LLM) | ~$6 |
+| Mistral-Large (api.mistral.ai) | ~$3/1M tokens input | ~$0.06 (4 appels LLM) | ~$6 |
 | VM D8s_v5 (orchestration) | $0.38/h | ~$0.03 (5 min) | ~$3 |
 | VM T4 Spot (GPU test/bench) | $0.13/h | ~$0.02 (10 min) | ~$2 |
 | Stockage output/ (Azure Blob) | $0.02/GB/mois | <$0.01 | <$1 |

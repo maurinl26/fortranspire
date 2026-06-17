@@ -10,25 +10,28 @@ Pour ce cas d'usage traitant de physiques lourdes (EDP, C-PML) et d'intelligence
    - *Instance recommandée :* `Standard_D8s_v5` (Machine optimisée calcul à usage général).
 2. **Nœud d'inférence Physique / JAX (GPU)** : Exécute la simulation JAX compilée (JIT) et entraîne le surrogate model de type Fourier Neural Operator (FNO).
    - *Instance recommandée :* `Standard_NCads_A100_v4` (qui dispose d'un GPU Nvidia A100 80GB) pour supporter de grandes dimensions spatiales.
-3. **Le Cerveau IA (Le LLM Mistral)** : Assure la compréhension mathématique et la traduction via un Endpoint Serverless.
-   - *Service :* **Azure AI Studio (Models as a Service)**. Modèle `Mistral-Large`.
+3. **Le Cerveau IA (Le LLM Mistral)** : Assure la compréhension mathématique et la traduction.
+   - *Service par défaut :* **La Plateforme Mistral** (`api.mistral.ai`) — endpoint souverain opéré en Europe par Mistral AI, sans intermédiaire hyperscaler.
+   - *Alternative on-prem :* vLLM/TGI hébergé sur la VM GPU ci-dessus, exposant la même API OpenAI-compatible.
 
 ---
 
-## 2. Accès à Mistral : "Models-as-a-Service" (MaaS)
+## 2. Accès à Mistral : endpoint souverain
 
-**Question clé pour le PoC : Ai-je besoin d'une clé Mistral en plus de mon compte Azure ?**
-**Non.** Avec le partenariat Microsoft x Mistral, le modèle fait partie de l'écosystème Azure.
-1. Depuis le portail Azure AI Studio, vous sélectionnez le modèle *Mistral-Large-Latest* et vous cliquez sur "Deploy".
-2. Azure va créer un *Endpoint* (URL) dédié à votre souscription.
-3. Azure vous fournira une **clé API Azure** spécifique pour cet Endpoint.
-La facturation se fait au nombre de tokens directement sur votre facture Azure existante. Aucune donnée n'est partagée à Mistral AI en propre.
+L'agent n'utilise pas Azure AI Studio pour le LLM. La connexion se fait **directement** vers un endpoint Mistral OpenAI-compatible :
 
-**Intégration Python (`.env`) :**
+1. Créer une clef sur [console.mistral.ai](https://console.mistral.ai/) → *API Keys*.
+2. Renseigner `.env` :
+
 ```env
-AZURE_MISTRAL_ENDPOINT="https://Mistral-large-YOUR-tenant.services.ai.azure.com/v1"
-AZURE_MISTRAL_API_KEY="votreclet-azure-ai-generative-23948..."
+MISTRAL_ENDPOINT="https://api.mistral.ai/v1"
+MISTRAL_API_KEY="<clef_mistral>"
+MISTRAL_MODEL="mistral-large-latest"
 ```
+
+Pour une souveraineté complète (données + poids du modèle hors cloud public), pointer `MISTRAL_ENDPOINT` vers un serveur vLLM/TGI auto-hébergé sur la VM GPU listée au §1. Voir la section "Connecter un endpoint Mistral" du `README.md` pour la commande `vllm serve`.
+
+> Les services restants documentés ici (orchestrateur D8s, inférence A100, ACR, CI/CD) concernent uniquement l'infrastructure de **compute** — le LLM, lui, ne dépend plus d'Azure.
 
 ---
 
