@@ -26,13 +26,16 @@ def openacc_insert_agent(state: Phase1State) -> dict:
 
     # Reasoning stage: data-flow analysis to place !$acc data copyin/copy clauses
     # correctly around the time loop. Wrong placement = silent GPU corruption.
+    from fortranspire.agent.schemas import OpenACCDriverOutput, OpenACCKernelOutput
     from fortranspire.llm import get_llm
     from fortranspire.prompts.loader import load_prompt
     from langchain_core.messages import SystemMessage, HumanMessage
     llm = get_llm("reasoning")
+    kernel_llm = llm.with_structured_output(OpenACCKernelOutput)
+    driver_llm = llm.with_structured_output(OpenACCDriverOutput)
 
     # ── 4a : Kernel subroutines ───────────────────────────────────────────────
-    kernel_system = SystemMessage(content=load_prompt("openacc_kernel", version="v1"))
+    kernel_system = SystemMessage(content=load_prompt("openacc_kernel", version="v2"))
 
     updated: List[KernelInfo] = []
     for kernel in state.get("kernel_results", []):
@@ -84,8 +87,14 @@ def openacc_insert_agent(state: Phase1State) -> dict:
             f"```fortran\n{src}\n```"
         ))
         try:
-            resp = llm.invoke([kernel_system, prompt])
-            annotated = _strip_markdown(resp.content)
+            try:
+                result = kernel_llm.invoke([kernel_system, prompt])
+                annotated = _strip_markdown(result.annotated_fortran)
+            except Exception:
+                # Backend without structured-output support — fall through to
+                # raw invoke and strip Markdown fences off whatever comes back.
+                resp = llm.invoke([kernel_system, prompt])
+                annotated = _strip_markdown(resp.content)
             # Safety net: strip any remaining PURE/ELEMENTAL the LLM left
             annotated = re.sub(
                 r"^(\s*)(PURE\s+|ELEMENTAL\s+)+(SUBROUTINE\b)",
@@ -106,17 +115,21 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     driver_with_acc = ""
 
     if driver_src:
-        driver_system = SystemMessage(content=load_prompt("openacc_driver", version="v1"))
+        driver_system = SystemMessage(content=load_prompt("openacc_driver", version="v2"))
         driver_prompt = HumanMessage(content=(
             f"Add !$acc data region around the time loop.\n"
             f"Kernel subroutines called inside the loop: {state.get('kernel_names', [])}\n\n"
             f"```fortran\n{driver_src}\n```"
         ))
         try:
-            resp = llm.invoke([driver_system, driver_prompt])
-            driver_with_acc = _strip_markdown(resp.content)
+            try:
+                result = driver_llm.invoke([driver_system, driver_prompt])
+                driver_with_acc = _strip_markdown(result.annotated_fortran)
+            except Exception:
+                resp = llm.invoke([driver_system, driver_prompt])
+                driver_with_acc = _strip_markdown(resp.content)
             _save(_out("fortran_gpu") / f"driver_gpu{out_ext}", driver_with_acc)
-            print(f"  driver → !$acc data region inserted")
+            print("  driver → !$acc data region inserted")
         except Exception as e:
             driver_with_acc = driver_src
             print(f"  LLM failed for driver data region: {e}")

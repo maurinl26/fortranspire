@@ -97,10 +97,11 @@ def extractor_agent(state: Phase1State) -> dict:
             "  - Remove all 'field => target' association statements.\n"
         )
 
+    from fortranspire.agent.schemas import ExtractorOutput
     from fortranspire.prompts.loader import load_prompt
 
     system = SystemMessage(content=load_prompt(
-        "extractor", version="v1",
+        "extractor", version="v2",
         common_rules=common_rules,
         save_rules=save_rules,
         flag_rules=flag_rules,
@@ -114,27 +115,40 @@ def extractor_agent(state: Phase1State) -> dict:
     ))
 
     try:
-        resp = llm.invoke([system, prompt])
-        content = resp.content
-
-        # Parse [MODULE]...[/MODULE] and [DRIVER]...[/DRIVER] blocks
-        module_match = re.search(r'\[MODULE\](.*?)\[/MODULE\]', content, re.DOTALL | re.IGNORECASE)
-        driver_match = re.search(r'\[DRIVER\](.*?)\[/DRIVER\]', content, re.DOTALL | re.IGNORECASE)
-
-        if module_match and driver_match:
-            module_code = _strip_markdown(module_match.group(1).strip())
-            driver_code = _strip_markdown(driver_match.group(1).strip())
-        else:
-            # Fallback: try to find two fortran code blocks
-            blocks = re.findall(r'```fortran\n(.*?)\n```', content, re.DOTALL)
-            if len(blocks) >= 2:
-                module_code = blocks[0].strip()
-                driver_code = blocks[1].strip()
-            else:
-                # Last resort: entire response is the module
-                module_code = _strip_markdown(content)
-                driver_code = ""
-                print("  WARNING: could not parse separate MODULE/DRIVER blocks")
+        # Prefer structured outputs (Mistral La Plateforme JSON-schema mode).
+        # Fall back to the regex parser for legacy / self-hosted backends.
+        module_code = ""
+        driver_code = ""
+        try:
+            result = llm.with_structured_output(ExtractorOutput).invoke([system, prompt])
+            module_code = _strip_markdown(result.module_fortran.strip())
+            driver_code = _strip_markdown(result.driver_fortran.strip())
+        except Exception as struct_exc:
+            print(f"  Structured output unavailable ({struct_exc}); using regex fallback.")
+            # Same v2 prompt — many models still emit usable JSON even when
+            # `with_structured_output` is not wired. Parse whatever comes back.
+            resp = llm.invoke([system, prompt])
+            content = resp.content
+            # JSON first (v2 prompt asks for it)
+            import json as _json
+            try:
+                blob = _json.loads(re.search(r"\{.*\}", content, re.DOTALL).group(0))
+                module_code = _strip_markdown(blob.get("module_fortran", "").strip())
+                driver_code = _strip_markdown(blob.get("driver_fortran", "").strip())
+            except Exception:
+                # Last-resort fallback to the v1 delimiter blocks.
+                module_match = re.search(r'\[MODULE\](.*?)\[/MODULE\]', content, re.DOTALL | re.IGNORECASE)
+                driver_match = re.search(r'\[DRIVER\](.*?)\[/DRIVER\]', content, re.DOTALL | re.IGNORECASE)
+                if module_match and driver_match:
+                    module_code = _strip_markdown(module_match.group(1).strip())
+                    driver_code = _strip_markdown(driver_match.group(1).strip())
+                else:
+                    blocks = re.findall(r'```fortran\n(.*?)\n```', content, re.DOTALL)
+                    if len(blocks) >= 2:
+                        module_code, driver_code = blocks[0].strip(), blocks[1].strip()
+                    else:
+                        module_code = _strip_markdown(content)
+                        print("  WARNING: could not parse separate MODULE/DRIVER blocks")
 
         # G3 safety net — ensure IMPLICIT NONE appears before CONTAINS
         if "implicit none" not in module_code.lower():
