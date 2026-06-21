@@ -1,24 +1,33 @@
-"""LangChain ↔ Mistral OpenAI-compatible endpoint.
+"""LangChain ↔ Mistral / OpenAI-compatible endpoint dispatch — issue #9.
 
-Two model roles are exposed via ``get_llm(stage)``:
+Two model roles via ``get_llm(stage)``:
 
-- ``"reasoning"`` (default) — semantic refactoring stages
-  (extractor, openacc data-region planning). Default model:
-  ``mistral-large-latest``.
-- ``"code"`` — boilerplate-heavy generation stages
-  (Cython wrapper, headers). Default model: ``codestral-latest``.
+- ``"reasoning"`` — semantic refactoring stages (extractor, openacc).
+  Default: ``mistral-large-latest``.
+- ``"code"`` — boilerplate-heavy generation stages (cython, doc_routine).
+  Default: ``codestral-latest``.
+
+Two backends, selected automatically (override via ``FORTRANSPIRE_LLM_BACKEND``):
+
+- **``mistral``** (preferred when the endpoint matches Mistral La Plateforme) —
+  uses ``langchain_mistralai.ChatMistralAI`` which wraps the official
+  ``mistralai`` Python SDK. Enables Mistral-native features: function
+  calling, JSON-mode, streaming, Mistral-specific safety guardrails.
+- **``openai``** — uses ``langchain_openai.ChatOpenAI`` against an
+  OpenAI-compatible endpoint. Works against vLLM / TGI / Ollama / Scaleway
+  Generative APIs / OVH AI Endpoints / any other OpenAI-shaped server.
 
 The legacy ``MISTRAL_MODEL`` env var still works as a single override for
 both roles, so existing ``.env`` files keep working unchanged.
 
-No Azure dependency: the agent talks directly to any OpenAI-compatible
-endpoint — La Plateforme Mistral, a self-hosted vLLM/TGI/Ollama server,
-or a sovereign-EU gateway (Scaleway Generative APIs, OVH AI Endpoints).
+No Azure dependency: the agent talks directly to the endpoint of your
+choice — La Plateforme, a self-hosted vLLM/TGI/Ollama server, or a
+sovereign-EU gateway.
 """
 from __future__ import annotations
 
 import os
-from typing import Literal
+from typing import Any, Literal
 
 from langchain_openai import ChatOpenAI
 
@@ -30,7 +39,8 @@ from fortranspire.config import config
 from fortranspire.cache import install_global_cache as _install_cache
 _install_cache()
 
-Stage = Literal["reasoning", "code"]
+Stage   = Literal["reasoning", "code"]
+Backend = Literal["mistral", "openai", "auto"]
 
 _DEFAULTS: dict[Stage, str] = {
     "reasoning": "mistral-large-latest",
@@ -60,17 +70,35 @@ def _resolve_model(stage: Stage) -> str:
     return _DEFAULTS[stage]
 
 
-def get_llm(stage: Stage = "reasoning") -> ChatOpenAI:
-    """Return a LangChain ``ChatOpenAI`` client wired to a Mistral-compatible endpoint.
+def _resolve_backend(endpoint: str) -> Backend:
+    """Pick the backend implementation. Env var override > endpoint sniff.
 
-    Args:
-        stage: ``"reasoning"`` for semantic stages (default), ``"code"`` for
-            boilerplate code-generation stages. Picks the right model name
-            automatically — see module docstring for the resolution rules.
+    Auto-detection: an endpoint that matches Mistral La Plateforme
+    (``api.mistral.ai``) uses the native ``mistralai`` SDK via
+    ``langchain-mistralai`` — gets first-class Mistral features. Any
+    other endpoint defaults to the generic OpenAI-compatible client so
+    self-hosted vLLM / TGI / Ollama / SoCloud / etc. keep working.
 
-    Why ``ChatOpenAI`` rather than ``ChatMistralAI``: the Mistral SDK hard-codes
-    paths that work on ``api.mistral.ai`` but break against vLLM / TGI / Ollama.
-    A single OpenAI-compatible client keeps every backend on the same code path.
+    Manual override:
+      FORTRANSPIRE_LLM_BACKEND=mistral   force native SDK
+      FORTRANSPIRE_LLM_BACKEND=openai    force OpenAI-compatible
+    """
+    override = os.getenv("FORTRANSPIRE_LLM_BACKEND", "auto").lower()
+    if override in ("mistral", "openai"):
+        return override  # type: ignore[return-value]
+    if "api.mistral.ai" in endpoint:
+        return "mistral"
+    return "openai"
+
+
+def get_llm(stage: Stage = "reasoning") -> Any:
+    """Return a LangChain chat client wired to the resolved backend.
+
+    Returns either ``ChatMistralAI`` (native SDK, when the endpoint is
+    Mistral La Plateforme) or ``ChatOpenAI`` (OpenAI-compatible
+    fallback). Both expose the same LangChain ``BaseChatModel``
+    interface, so callers (extractor / openacc / cython / document)
+    don't need to branch.
     """
     api_key  = os.getenv("MISTRAL_API_KEY")
     endpoint = os.getenv("MISTRAL_ENDPOINT", "https://api.mistral.ai/v1").rstrip("/")
@@ -81,20 +109,46 @@ def get_llm(stage: Stage = "reasoning") -> ChatOpenAI:
             "MISTRAL_ENDPOINT defaults to https://api.mistral.ai/v1."
         )
 
+    model = _resolve_model(stage)
+    backend = _resolve_backend(endpoint)
+
+    if backend == "mistral":
+        # Lazy-import so the OpenAI-only path doesn't require langchain-mistralai
+        # to be present (some self-hosted images strip it).
+        try:
+            from langchain_mistralai import ChatMistralAI
+        except ImportError:
+            # Graceful fallback: if langchain-mistralai isn't installed,
+            # use ChatOpenAI even when the endpoint is Mistral. The user
+            # loses native SDK perks but the call still works.
+            return ChatOpenAI(
+                base_url=endpoint,
+                api_key=api_key,
+                model=model,
+                temperature=config.temperature,
+            )
+        return ChatMistralAI(
+            mistral_api_key=api_key,
+            endpoint=endpoint,
+            model=model,
+            temperature=config.temperature,
+        )
+
+    # backend == "openai"
     return ChatOpenAI(
         base_url=endpoint,
         api_key=api_key,
-        model=_resolve_model(stage),
+        model=model,
         temperature=config.temperature,
     )
 
 
 # Backward-compatibility aliases — old call sites that used these names
 # get the right model role automatically.
-def get_reasoning_llm() -> ChatOpenAI:
+def get_reasoning_llm() -> Any:
     return get_llm("reasoning")
 
 
-def get_translator_llm() -> ChatOpenAI:
+def get_translator_llm() -> Any:
     """Alias kept for legacy callers; routes to the code-gen model."""
     return get_llm("code")
