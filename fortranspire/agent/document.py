@@ -133,13 +133,10 @@ def extract_routines(path: str) -> FileDoc:
 
 # ── LLM narrative generation ────────────────────────────────────────────────
 
-_PROMPT_SYSTEM = (
-    "You document legacy Fortran 90 HPC routines for two audiences in one pass:\n"
-    "  - non-developer stakeholders (one-line summary)\n"
-    "  - HPC engineers maintaining the code (paragraph with INTENT semantics,\n"
-    "    invariants, gotchas — hidden SAVE, COMMON blocks, index ordering).\n"
-    "Always return valid JSON, no Markdown fences, no preamble."
-)
+def _get_system_prompt() -> str:
+    """Lazy — only loaded when the LLM actually fires (keeps --no-llm cheap)."""
+    from fortranspire.prompts.loader import load_prompt
+    return load_prompt("doc_routine", version="v1")
 
 _RESPONSE_SCHEMA_HINT = textwrap.dedent("""\
     Reply with a JSON object matching exactly this schema:
@@ -193,7 +190,7 @@ def generate_narrative(routine: RoutineDoc, body: str) -> None:
 
     llm = get_llm("code")  # Codestral handles narrative-from-code well, cheaper than Mistral-Large
     response = llm.invoke([
-        SystemMessage(content=_PROMPT_SYSTEM),
+        SystemMessage(content=_get_system_prompt()),
         HumanMessage(content=_build_user_prompt(routine, body)),
     ])
     parsed = _parse_llm_json(response.content if hasattr(response, "content") else str(response))

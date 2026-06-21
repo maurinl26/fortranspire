@@ -48,11 +48,10 @@ def cython_wrapper_agent(state: Phase1State) -> dict:
         for k in eligible
     ]
 
+    from fortranspire.prompts.loader import load_prompt
+
     # ── Generate .pyx ────────────────────────────────────────────────
-    pyx_system = SystemMessage(content=(
-        "You are a Cython expert specializing in Fortran interoperability. "
-        "Generate clean, efficient Cython wrappers with correct memory layout."
-    ))
+    pyx_system = SystemMessage(content=load_prompt("cython_pyx", version="v1"))
     pyx_prompt = HumanMessage(content=(
         f"Generate a Cython wrapper (.pyx) for these Fortran subroutines "
         f"compiled with nvfortran -acc (OpenACC).\n"
@@ -70,7 +69,7 @@ def cython_wrapper_agent(state: Phase1State) -> dict:
     ))
 
     # ── Generate C header ────────────────────────────────────────────
-    header_system = SystemMessage(content="You are a C/Fortran interop expert.")
+    header_system = SystemMessage(content=load_prompt("cython_header", version="v1"))
     header_prompt = HumanMessage(content=(
         f"Generate a C header file (kernel_c.h) for these Fortran subroutines "
         f"using iso_c_binding:\n{routines_summary}\n"
