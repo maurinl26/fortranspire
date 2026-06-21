@@ -39,6 +39,7 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "graph":      ("fortranspire.agent.call_graph", "main"),
     "diff":       ("fortranspire.agent.diff",     "main"),
     "report":     ("fortranspire.agent.report",   "main"),
+    "bench":      ("fortranspire.agent.bench",    "main"),
     "gpu":        ("fortranspire.agent.cli",      "run_translate_gpu"),
     "translate":  ("fortranspire.agent.cli",      "run_translate"),
     "profile":    ("fortranspire.agent.cli",      "run_profile"),
@@ -61,6 +62,7 @@ Commands:
   graph       Module-level call-graph report (Mermaid flowchart)
   diff        Semantic before/after diff viewer (text or HTML)
   report      HTML audit dashboard for a Phase-1 output directory
+  bench       Pipeline-output benchmark + regression detector
   gpu         Phase 1: Fortran → GPU (OpenACC) + Cython wrapper
   port-batch  Parallel Phase 1 port across many files
   translate   Phase 2: Fortran → JAX (experimental)
