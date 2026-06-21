@@ -42,23 +42,22 @@ def translate_file(filepath: str):
     print(f"\n✅ Translation complete → {output_path}")
 
 
-def translate_file_gpu(filepath: str):
-    """Phase 1 — pipeline Fortran GPU + Cython."""
+def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
+    """Phase 1 — pipeline Fortran GPU + Cython.
+
+    ``gpu_pragma`` selects the directive family for the openacc/openmp
+    node (issue #18): ``"acc"`` (default, OpenACC + nvfortran) or
+    ``"omp"`` (OpenMP target, multi-vendor: gfortran 13+, nvfortran -mp=gpu,
+    ifx -fiopenmp).
+    """
+    pragma_label = "OpenACC" if gpu_pragma == "acc" else "OpenMP target"
     print(f"\n{'═' * 60}")
-    print(f"  🚀 Fortran → GPU Pipeline (Phase 1)")
+    print(f"  🚀 Fortran → GPU Pipeline (Phase 1) — pragma: {pragma_label}")
     print(f"{'═' * 60}")
     print(f"  📂 Input  : {filepath}")
     print(f"  🤖 Model  : Mistral-Large (endpoint souverain)")
     print(f"  📦 Output : output/fortran_gpu/  +  output/cython/")
-    print(f"{'─' * 60}")
-    print(f"  Steps:")
-    print(f"    🔍 parser         → Loki AST analysis")
-    print(f"    🔧 extractor      → MODULE extraction (COMMON/SAVE/INTENT)")
-    print(f"    ✨ pure_elemental  → Semantic purity annotation")
-    print(f"    🚀 openacc        → !$acc parallel loop + !$acc data")
-    print(f"    🐍 cython_wrapper → NumPy memoryview wrapper")
-    print(f"    ✅ validation      → gfortran syntax check × 2 + nvfortran")
-    print(f"{'═' * 60}\n")
+    print(f"{'─' * 60}\n")
 
     from fortranspire.agent.translation_graph_phase1 import translation_app_phase1
     code = _read_file(filepath)
@@ -79,6 +78,7 @@ def translate_file_gpu(filepath: str):
         "cython_setup": "",
         "validation_passed": False,
         "validation_log": "",
+        "gpu_pragma": gpu_pragma,
         "executed_agents": [],
     }
     final_state = translation_app_phase1.invoke(initial_state)
@@ -217,12 +217,15 @@ def run_translate_gpu():
         ),
     )
     parser.add_argument("args", nargs="+", help="[translate] <filepath.f90>")
+    parser.add_argument("--gpu-pragma", choices=("acc", "omp"), default="acc",
+                        help="GPU directive family (default: acc). "
+                             "'omp' = OpenMP target offload (issue #18)")
     parsed = parser.parse_args()
     # Strip optional subcommand for parity with agent-pipeline syntax
     parts = [p for p in parsed.args if p not in {"translate", "profile"}]
     if not parts:
         parser.error("❌ filepath is required")
-    translate_file_gpu(parts[0])
+    translate_file_gpu(parts[0], gpu_pragma=parsed.gpu_pragma)
 
 
 def run_profile():
