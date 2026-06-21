@@ -21,6 +21,7 @@ from fortranspire.agent.nodes.extractor import extractor_agent
 from fortranspire.agent.nodes.pure_elemental import pure_elemental_agent
 from fortranspire.agent.nodes.openacc import openacc_insert_agent
 from fortranspire.agent.nodes.cython_wrapper import cython_wrapper_agent
+from fortranspire.agent.nodes.equivalence_harness import equivalence_harness_agent
 from fortranspire.agent.nodes.validation import validation_agent
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "pure_elemental_agent",
     "openacc_insert_agent",
     "cython_wrapper_agent",
+    "equivalence_harness_agent",
     "validation_agent",
 ]
