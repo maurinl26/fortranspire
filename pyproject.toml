@@ -117,7 +117,13 @@ tests = [
 ]
 
 [project.scripts]
-# Main Server
+# Unified CLI — the canonical entry point (issue #8).
+# Subcommands: analyze, doc, explain, format, gpu, port-batch, translate,
+# profile, mcp. Each takes `--help` for command-specific options.
+fortranspire = "fortranspire.cli:main"
+
+# Legacy aliases — kept for backwards compatibility, removed in 0.3.
+# Each prints a one-line deprecation notice on stderr.
 run-mcp = "fortranspire.server:main"
 
 # Static analysis only (no LLM, CI-friendly)
