@@ -4,8 +4,9 @@ import sys
 # `translation_graph` and `translation_graph_phase1` pull in the LangChain
 # stack at import time, which is only present when the [gpu] extra is
 # installed. Importing them eagerly at module top would break
-# `agent-analyze`, `agent-doc`, `agent-format` and `agent-explain` on the
-# core-only install. Pulled into the functions that actually need them.
+# `agent-analyze`, `agent-doc`, `agent-format`, `agent-explain` and
+# `agent-port-batch` on the core-only install. Pulled into the functions
+# that actually need them.
 
 
 def _read_file(filepath: str) -> str:
@@ -141,6 +142,12 @@ def run_format():
     """agent-format — fprettify-based Fortran source formatter."""
     from fortranspire.agent.format import main as _format_main
     sys.exit(_format_main())
+
+
+def run_port_batch():
+    """agent-port-batch — parallel Fortran → GPU port across many files."""
+    from fortranspire.agent.batch import main as _batch_main
+    sys.exit(_batch_main())
 
 
 def run_translate():
