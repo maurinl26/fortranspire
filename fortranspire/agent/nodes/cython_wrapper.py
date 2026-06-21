@@ -49,9 +49,12 @@ def cython_wrapper_agent(state: Phase1State) -> dict:
     ]
 
     from fortranspire.agent.schemas import CythonHeaderOutput, CythonPyxOutput
+    from fortranspire.observability import tracer
+    from fortranspire.observability.llm_callback import token_callback
     from fortranspire.prompts.loader import load_prompt
     pyx_llm    = llm.with_structured_output(CythonPyxOutput)
     header_llm = llm.with_structured_output(CythonHeaderOutput)
+    model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
 
     # ── Generate .pyx ────────────────────────────────────────────────
     pyx_system = SystemMessage(content=load_prompt("cython_pyx", version="v2"))
@@ -113,19 +116,23 @@ def cython_wrapper_agent(state: Phase1State) -> dict:
 
     pyx_code, header_code = "", ""
     try:
-        try:
-            pyx_result = pyx_llm.invoke([pyx_system, pyx_prompt])
-            pyx_code   = _strip_markdown(pyx_result.pyx_code)
-        except Exception:
-            resp_pyx = llm.invoke([pyx_system, pyx_prompt])
-            pyx_code = _strip_markdown(resp_pyx.content)
+        with tracer.span(node="cython_pyx", model=model_name) as span:
+            cfg = {"callbacks": [token_callback(span)]}
+            try:
+                pyx_result = pyx_llm.invoke([pyx_system, pyx_prompt], config=cfg)
+                pyx_code   = _strip_markdown(pyx_result.pyx_code)
+            except Exception:
+                resp_pyx = llm.invoke([pyx_system, pyx_prompt], config=cfg)
+                pyx_code = _strip_markdown(resp_pyx.content)
 
-        try:
-            header_result = header_llm.invoke([header_system, header_prompt])
-            header_code   = _strip_markdown(header_result.header_code)
-        except Exception:
-            resp_header = llm.invoke([header_system, header_prompt])
-            header_code = _strip_markdown(resp_header.content)
+        with tracer.span(node="cython_header", model=model_name) as span:
+            cfg = {"callbacks": [token_callback(span)]}
+            try:
+                header_result = header_llm.invoke([header_system, header_prompt], config=cfg)
+                header_code   = _strip_markdown(header_result.header_code)
+            except Exception:
+                resp_header = llm.invoke([header_system, header_prompt], config=cfg)
+                header_code = _strip_markdown(resp_header.content)
 
         cython_dir = _out("cython")
         _save(cython_dir / f"{module_name}.pyx", pyx_code)
