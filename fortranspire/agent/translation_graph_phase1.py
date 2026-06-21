@@ -6,7 +6,8 @@ lives in its own module under :mod:`fortranspire.agent.nodes`.
 
 Pipeline (sequential, no branching):
 
-    init → parser → extractor → pure_elemental → openacc → cython_wrapper → validation → END
+    init → parser → extractor → pure_elemental → openacc → cython_wrapper
+        → equivalence_harness → validation → END
 
 LLM call budget (4 maximum):
 
@@ -35,27 +36,30 @@ from fortranspire.agent.nodes import (
     pure_elemental_agent,
     openacc_insert_agent,
     cython_wrapper_agent,
+    equivalence_harness_agent,
     validation_agent,
 )
 
 workflow_phase1 = StateGraph(Phase1State)
 
-workflow_phase1.add_node("init",           init_phase1)
-workflow_phase1.add_node("parser",         parser_phase1)
-workflow_phase1.add_node("extractor",      extractor_agent)
-workflow_phase1.add_node("pure_elemental", pure_elemental_agent)
-workflow_phase1.add_node("openacc",        openacc_insert_agent)
-workflow_phase1.add_node("cython_wrapper", cython_wrapper_agent)
-workflow_phase1.add_node("validation",     validation_agent)
+workflow_phase1.add_node("init",                 init_phase1)
+workflow_phase1.add_node("parser",               parser_phase1)
+workflow_phase1.add_node("extractor",            extractor_agent)
+workflow_phase1.add_node("pure_elemental",       pure_elemental_agent)
+workflow_phase1.add_node("openacc",              openacc_insert_agent)
+workflow_phase1.add_node("cython_wrapper",       cython_wrapper_agent)
+workflow_phase1.add_node("equivalence_harness",  equivalence_harness_agent)
+workflow_phase1.add_node("validation",           validation_agent)
 
 workflow_phase1.set_entry_point("init")
-workflow_phase1.add_edge("init",           "parser")
-workflow_phase1.add_edge("parser",         "extractor")
-workflow_phase1.add_edge("extractor",      "pure_elemental")
-workflow_phase1.add_edge("pure_elemental", "openacc")
-workflow_phase1.add_edge("openacc",        "cython_wrapper")
-workflow_phase1.add_edge("cython_wrapper", "validation")
-workflow_phase1.add_edge("validation",     END)
+workflow_phase1.add_edge("init",                 "parser")
+workflow_phase1.add_edge("parser",               "extractor")
+workflow_phase1.add_edge("extractor",            "pure_elemental")
+workflow_phase1.add_edge("pure_elemental",       "openacc")
+workflow_phase1.add_edge("openacc",              "cython_wrapper")
+workflow_phase1.add_edge("cython_wrapper",       "equivalence_harness")
+workflow_phase1.add_edge("equivalence_harness",  "validation")
+workflow_phase1.add_edge("validation",           END)
 
 translation_app_phase1 = workflow_phase1.compile()
 
@@ -72,5 +76,6 @@ __all__ = [
     "pure_elemental_agent",
     "openacc_insert_agent",
     "cython_wrapper_agent",
+    "equivalence_harness_agent",
     "validation_agent",
 ]

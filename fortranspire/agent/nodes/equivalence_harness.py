@@ -1,0 +1,231 @@
+"""Node 7 — auto-generate an equivalence test harness for each ported kernel.
+
+Issue #11. Without an automatic numerical-equivalence check, a freshly
+ported GPU kernel is "code that compiles" — not "code an engineer would
+ship". This node closes that gap: after Cython wrapping, it emits a
+self-contained pytest file that runs the original Fortran kernel (via
+`f2py`) and the GPU-wrapped Cython version on the same random inputs
+and asserts they agree to within a configurable tolerance.
+
+Deterministic — zero LLM calls. Templated from the parser's per-routine
+INTENT / dimensions metadata. The generated test is **skipped** at
+collection time if either build is missing (CPU `.so` from f2py, or the
+Cython `.so` from `setup.py build_ext`) so users can run the rest of
+their suite without being blocked by the GPU toolchain.
+"""
+from __future__ import annotations
+
+import os
+import re
+import textwrap
+from pathlib import Path
+from typing import Iterable, List
+
+from fortranspire.agent.nodes._common import SEP, _out, _save
+from fortranspire.agent.nodes._state import KernelInfo, Phase1State
+
+# Tolerances tuned for typical seismic FD stencils in double precision.
+# Override per-deployment via env vars (same pattern as MISTRAL_MODEL_*).
+_DEFAULT_ATOL = float(os.getenv("FORTRANSPIRE_TOLERANCE_ATOL", "1e-10"))
+_DEFAULT_RTOL = float(os.getenv("FORTRANSPIRE_TOLERANCE_RTOL", "1e-8"))
+
+
+# ── Per-argument shape inference ────────────────────────────────────────────
+
+_SCALAR_INT_NAMES = {"nx", "ny", "nz", "n", "m"}
+
+
+def _is_scalar_int(name: str, dims: dict) -> bool:
+    """Heuristic — `nx`, `ny`, `n`, `nz`, `m` and anything without dimensions."""
+    if name.lower() in _SCALAR_INT_NAMES:
+        return True
+    return not bool(dims.get(name))
+
+
+def _alloc_call(arg: str, kernel: KernelInfo, default_grid: int) -> str:
+    """Return a Python literal that allocates a NumPy array for `arg`.
+
+    For scalars (no dimensions), emits the literal value.
+    For arrays, emits ``np.asfortranarray(rng.standard_normal((<dims>)))``.
+    """
+    intent = kernel["intent_map"].get(arg, "IN").upper()
+    dims = kernel["dimensions"].get(arg)
+
+    if _is_scalar_int(arg, kernel["dimensions"]):
+        return str(default_grid)
+
+    if not dims:
+        # Real scalar parameter — small finite value.
+        return "1.0"
+
+    # Replace symbolic NX/NY/NZ in dims with `default_grid` literal so the
+    # generated test is self-contained.
+    shape_literals = []
+    for d in dims:
+        d_clean = str(d).strip()
+        if any(tok in d_clean.upper() for tok in ("NX", "NY", "NZ")):
+            shape_literals.append(str(default_grid))
+        else:
+            try:
+                shape_literals.append(str(int(d_clean)))
+            except ValueError:
+                shape_literals.append(str(default_grid))
+    shape = ", ".join(shape_literals)
+    if intent == "IN":
+        return f"np.asfortranarray(rng.standard_normal(({shape},)))"
+    return f"np.asfortranarray(rng.standard_normal(({shape},)).copy())"
+
+
+def _kernel_test_body(kernel: KernelInfo, default_grid: int = 32) -> str:
+    """Render the body of one `test_<kernel>_equivalence` function."""
+    name = kernel["routine_name"]
+    args = list(kernel["intent_map"].keys())
+
+    alloc_lines: list[str] = []
+    capture_lines: list[str] = []
+    for a in args:
+        alloc_lines.append(f"    {a}_cpu = {_alloc_call(a, kernel, default_grid)}")
+        alloc_lines.append(f"    {a}_gpu = (np.array({a}_cpu, copy=True) "
+                           f"if hasattr({a}_cpu, 'shape') else {a}_cpu)")
+        intent = kernel["intent_map"].get(a, "IN").upper()
+        if intent in ("OUT", "INOUT"):
+            capture_lines.append(a)
+
+    call_args = ", ".join(f"{a}_cpu" for a in args)
+    gpu_call_args = ", ".join(f"{a}_gpu" for a in args)
+
+    assertion_lines: list[str] = []
+    for a in capture_lines:
+        assertion_lines.append(
+            f"    np.testing.assert_allclose({a}_gpu, {a}_cpu, "
+            f"atol=ATOL, rtol=RTOL, err_msg=f\"GPU/CPU mismatch on `{a}`\")"
+        )
+
+    body = "\n".join([
+        f"def test_{name}_equivalence():",
+        f"    \"\"\"GPU port of `{name}` must match the original within (atol, rtol).\"\"\"",
+        f"    rng = np.random.default_rng(0xF0_71_AA_5E)   # deterministic per pytest run",
+        *alloc_lines,
+        f"    cpu_mod.{name}({call_args})",
+        f"    gpu_mod.{name}({gpu_call_args})",
+        *(assertion_lines or [f"    pytest.skip('no INTENT(OUT|INOUT) on `{name}` — nothing to compare')"]),
+    ])
+    return body
+
+
+def _render_test_file(
+    eligible: List[KernelInfo],
+    *,
+    module_name: str,
+    original_fortran: str,
+    atol: float,
+    rtol: float,
+) -> str:
+    header = textwrap.dedent(f'''\
+        """Auto-generated equivalence harness for `{module_name}`.
+
+        Compares the original Fortran kernels (loaded via f2py) against the
+        GPU-wrapped Cython port. Generated by fortranspire — do not edit by
+        hand; re-run `fortranspire gpu <source>` to refresh.
+
+        Skip rules (graceful degradation):
+          * f2py wrapper not built → all tests skipped with a clear message.
+          * Cython GPU `.so` not on PYTHONPATH → all tests skipped.
+
+        Build instructions on first run:
+            f2py -c -m cpu_mod {original_fortran}
+            cd output && python setup.py build_ext --inplace
+
+        Tolerances are configurable at generation time via the env vars
+        ``FORTRANSPIRE_TOLERANCE_ATOL`` / ``FORTRANSPIRE_TOLERANCE_RTOL``.
+        Defaults: 1e-10 absolute, 1e-8 relative — tuned for double-precision
+        seismic FD stencils. Loosen for single-precision kernels.
+        """
+        from __future__ import annotations
+
+        import importlib
+        import pytest
+
+        np = pytest.importorskip("numpy")
+
+        ATOL = {atol!r}
+        RTOL = {rtol!r}
+
+        try:
+            cpu_mod = importlib.import_module("cpu_mod")          # f2py output
+        except ImportError as exc:
+            pytest.skip(f"f2py CPU wrapper not built — {{exc}}", allow_module_level=True)
+
+        try:
+            gpu_mod = importlib.import_module("{module_name}")     # Cython output
+        except ImportError as exc:
+            pytest.skip(f"Cython GPU wrapper not built — {{exc}}", allow_module_level=True)
+
+        ''')
+
+    bodies = "\n\n\n".join(_kernel_test_body(k) for k in eligible)
+    return header + "\n" + bodies + "\n"
+
+
+# ── Pipeline node ──────────────────────────────────────────────────────────
+
+def equivalence_harness_agent(state: Phase1State) -> dict:
+    """Generate `output/tests/test_<module>_equivalence.py`."""
+    print(f"\n{SEP}")
+    print("  [Equivalence harness] Generating CPU↔GPU pytest file")
+    print(SEP)
+
+    eligible = [k for k in state.get("kernel_results", []) if not k["has_io"]]
+    if not eligible:
+        print("  No eligible routines (all have I/O or extraction failed) — skipping.")
+        return {"executed_agents": list(state.get("executed_agents", [])) + ["equivalence_harness"]}
+
+    filepath    = state["fortran_filepath"]
+    module_name = Path(filepath).stem.lower().replace("-", "_").replace(".", "_")
+
+    test_src = _render_test_file(
+        eligible,
+        module_name=module_name,
+        original_fortran=filepath,
+        atol=_DEFAULT_ATOL,
+        rtol=_DEFAULT_RTOL,
+    )
+
+    tests_dir = _out("tests")
+    test_path = tests_dir / f"test_{module_name}_equivalence.py"
+    _save(test_path, test_src)
+
+    # Drop a tiny README next to the test explaining the build steps for first runs.
+    readme = textwrap.dedent(f"""\
+        # Equivalence tests for `{module_name}`
+
+        These tests check that the GPU-wrapped Cython port matches the original
+        Fortran kernels within `(atol={_DEFAULT_ATOL}, rtol={_DEFAULT_RTOL})`.
+
+        Build the two backing modules once, then run pytest:
+
+        ```bash
+        # 1) CPU reference via f2py
+        f2py -c -m cpu_mod {filepath}
+
+        # 2) GPU port via Cython (the pyproject.toml generated by fortranspire)
+        cd output && python setup.py build_ext --inplace
+
+        # 3) Run the equivalence harness
+        pytest output/tests/
+        ```
+
+        Tolerances default to seismic-FD-friendly values. Loosen via env vars
+        before invoking pytest if your kernels are single precision:
+
+        ```bash
+        FORTRANSPIRE_TOLERANCE_ATOL=1e-5 FORTRANSPIRE_TOLERANCE_RTOL=1e-4 pytest
+        ```
+    """)
+    _save(tests_dir / "README.md", readme)
+
+    print(f"  Generated {test_path} ({len(eligible)} routine(s) covered)")
+
+    return {
+        "executed_agents": list(state.get("executed_agents", [])) + ["equivalence_harness"],
+    }
