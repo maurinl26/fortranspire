@@ -36,6 +36,7 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "explain":    ("fortranspire.agent.explain",  "main"),
     "format":     ("fortranspire.agent.format",   "main"),
     "port-batch": ("fortranspire.agent.batch",    "main"),
+    "graph":      ("fortranspire.agent.call_graph", "main"),
     "gpu":        ("fortranspire.agent.cli",      "run_translate_gpu"),
     "translate":  ("fortranspire.agent.cli",      "run_translate"),
     "profile":    ("fortranspire.agent.cli",      "run_profile"),
@@ -55,6 +56,7 @@ Commands:
   doc         Documentation generator (inline !> + Sphinx)
   explain     Pre-flight cost + risk estimate (no LLM, no tokens)
   format      Fortran source formatter (fprettify wrapper)
+  graph       Module-level call-graph report (Mermaid flowchart)
   gpu         Phase 1: Fortran → GPU (OpenACC) + Cython wrapper
   port-batch  Parallel Phase 1 port across many files
   translate   Phase 2: Fortran → JAX (experimental)
