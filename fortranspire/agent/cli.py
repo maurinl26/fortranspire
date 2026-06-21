@@ -120,38 +120,56 @@ def profile_file(filepath: str):
 
 # ── UV Entry Points ────────────────────────────────────────────────────────────
 
+
+def _deprecation_notice(legacy: str, new: str) -> None:
+    """Print a one-line stderr warning so legacy `agent-*` callers know
+    the unified `fortranspire <verb>` CLI is the way forward.
+
+    Removal is scheduled for 0.3 — keep the version pinned in the message
+    so users can plan their migration without guessing.
+    """
+    print(f"warning: `{legacy}` is deprecated; use `{new}` instead. "
+          f"Will be removed in fortranspire 0.3.", file=sys.stderr)
+
+
 def run_analyze():
     """agent-analyze — Loki-only static analysis, no LLM, SARIF/JSON/text."""
+    _deprecation_notice("agent-analyze", "fortranspire analyze")
     from fortranspire.agent.analyze import main as _analyze_main
     sys.exit(_analyze_main())
 
 
 def run_doc():
     """agent-doc — LLM-driven Fortran documentation (inline + Sphinx site)."""
+    _deprecation_notice("agent-doc", "fortranspire doc")
     from fortranspire.agent.document import main as _doc_main
     sys.exit(_doc_main())
 
 
 def run_explain():
     """agent-explain — pre-flight cost + risk estimate (no LLM, no tokens)."""
+    _deprecation_notice("agent-explain", "fortranspire explain")
     from fortranspire.agent.explain import main as _explain_main
     sys.exit(_explain_main())
 
 
 def run_format():
     """agent-format — fprettify-based Fortran source formatter."""
+    _deprecation_notice("agent-format", "fortranspire format")
     from fortranspire.agent.format import main as _format_main
     sys.exit(_format_main())
 
 
 def run_port_batch():
     """agent-port-batch — parallel Fortran → GPU port across many files."""
+    _deprecation_notice("agent-port-batch", "fortranspire port-batch")
     from fortranspire.agent.batch import main as _batch_main
     sys.exit(_batch_main())
 
 
 def run_translate():
     """agent-translate — Phase 2 : Fortran → JAX"""
+    _deprecation_notice("agent-translate", "fortranspire translate")
     parser = argparse.ArgumentParser(
         description="🔬 Fortran → JAX Translation (Phase 2 — experimental)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -172,6 +190,7 @@ def run_translate_gpu():
       uv run agent-gpu /path/to/kernel.f90
       uv run agent-gpu translate /path/to/kernel.f90
     """
+    _deprecation_notice("agent-gpu", "fortranspire gpu")
     parser = argparse.ArgumentParser(
         description=(
             "🚀 Fortran → Fortran GPU + Cython (Phase 1)\n\n"
@@ -208,6 +227,7 @@ def run_translate_gpu():
 
 def run_profile():
     """agent-profile — Performance benchmarking"""
+    _deprecation_notice("agent-profile", "fortranspire profile")
     parser = argparse.ArgumentParser(
         description="📊 Fortran Performance Profile Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
