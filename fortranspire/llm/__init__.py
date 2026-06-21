@@ -24,6 +24,12 @@ from langchain_openai import ChatOpenAI
 
 from fortranspire.config import config
 
+# Install the content-addressed LLM response cache (#7) once per process.
+# `install_global_cache` is idempotent and a no-op when
+# `FORTRANSPIRE_CACHE=off`, so this is safe in every install profile.
+from fortranspire.cache import install_global_cache as _install_cache
+_install_cache()
+
 Stage = Literal["reasoning", "code"]
 
 _DEFAULTS: dict[Stage, str] = {
