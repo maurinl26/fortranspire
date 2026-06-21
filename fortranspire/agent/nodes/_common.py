@@ -8,15 +8,48 @@ from __future__ import annotations
 import os
 import re
 import shutil
+from contextvars import ContextVar
 from pathlib import Path
 
 SEP  = "─" * 64
 SEP2 = "═" * 64
 
+# Per-thread / per-task output root, set by `agent-port-batch` so concurrent
+# kernel ports don't clobber each other's `output/fortran_gpu/` and
+# `output/cython/` directories. `None` = use the default `Path("output")`
+# (legacy single-port behavior).
+#
+# ContextVar is thread-local in Python: each worker thread sees `None` until
+# it explicitly calls `set_output_root()` at the top of its task function.
+_OUTPUT_ROOT: ContextVar[Path | None] = ContextVar("_OUTPUT_ROOT", default=None)
+
+
+def set_output_root(root: Path | str | None) -> None:
+    """Override the output root for the calling thread / async task.
+
+    Used by ``fortranspire.agent.batch`` to isolate per-file outputs when
+    porting many kernels in parallel. Pass ``None`` to revert to default.
+    """
+    _OUTPUT_ROOT.set(Path(root) if root is not None else None)
+
+
+def get_output_root() -> Path:
+    """Resolve the active output root (contextvar > env > default `output/`)."""
+    root = _OUTPUT_ROOT.get()
+    if root is not None:
+        return root
+    return Path(os.getenv("FORTRANSPIRE_OUTPUT_ROOT", "output"))
+
 
 def _out(category: str = "fortran_gpu") -> Path:
-    """Resolve and create the per-category output directory."""
-    p = Path("output") / category
+    """Resolve and create the per-category output directory.
+
+    Output root resolution (first hit wins):
+      1. ``set_output_root(...)`` call active in the current thread/task
+      2. ``FORTRANSPIRE_OUTPUT_ROOT`` env var
+      3. literal ``output/`` (legacy default)
+    """
+    p = get_output_root() / category
     p.mkdir(parents=True, exist_ok=True)
     return p
 
