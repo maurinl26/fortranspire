@@ -17,8 +17,9 @@ WORKDIR /app
 
 # Copie des configurations
 COPY pyproject.toml .
-# Installe les dépendances via uv (cela crée implicitement un virtualenv s'il n'y en a pas, ou installe globalement si configuré)
-RUN uv pip install --system -e .
+# Image HPC = pipeline complet (GPU + MCP + JAX). L'image analyze-only
+# minimale est définie séparément dans Apptainer.analyze.
+RUN uv pip install --system -e ".[all]"
 
 # Copie du code source complet
 COPY . .

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: local-code-agent
+    container_name: fortranspire
     ports:
       - "8000:8000"         # Serveur MCP HTTP/SSE → Antigravity
     volumes:

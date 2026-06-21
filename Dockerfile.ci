@@ -17,12 +17,11 @@ RUN pip install --no-cache-dir --upgrade pip
 RUN git clone https://github.com/ecmwf-ifs/loki.git /opt/loki && \
     cd /opt/loki && pip install -e .
 
-# Install JAX (CPU version by default for CI runners, or switch to jax[cuda12] if using GPU runners)
-RUN pip install --no-cache-dir jax[cpu] numpy pytest
-
-# Install Agent dependencies
-COPY local_code_agent/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install the project with the JAX + GPU-pipeline extras + tests deps.
+# Skip [mcp] in CI (the server isn't exercised in unit tests).
+COPY pyproject.toml .
+COPY fortranspire/ ./fortranspire/
+RUN pip install --no-cache-dir -e ".[gpu,jax,tests]"
 
 # Copy source
 COPY . .

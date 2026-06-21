@@ -1,0 +1,64 @@
+cff-version: 1.2.0
+title: "fortranspire: LLM + MCP pipeline porting legacy Fortran HPC kernels to OpenACC GPU and differentiable JAX"
+message: "If you use this software, please cite it using the metadata below."
+type: software
+authors:
+  - given-names: "Loïc"
+    family-names: "Maurin"
+    email: "maurin.loic.ac@gmail.com"
+    orcid: "https://orcid.org/0009-0004-8117-4850"
+    affiliation: "External Lecturer, École Nationale de la Météorologie, Toulouse, France"
+abstract: >-
+  fortranspire is an open-source Model Context Protocol (MCP) server and
+  command-line agent that incrementally transforms legacy Fortran 90
+  scientific code into GPU-accelerated (OpenACC), Python-callable
+  (Cython / scikit-build), and optionally differentiable (JAX) form. It
+  combines deterministic Loki AST analysis with targeted LLM calls
+  against any OpenAI-compatible endpoint (Mistral La Plateforme,
+  self-hosted vLLM / TGI / Ollama), so the agent stays sovereign and
+  endpoint-agnostic.
+keywords:
+  - fortran
+  - hpc
+  - gpu
+  - openacc
+  - jax
+  - cython
+  - loki
+  - model-context-protocol
+  - mcp
+  - mistral
+  - codestral
+  - large-language-models
+  - scientific-computing
+  - seismic-imaging
+  - numerical-weather-prediction
+  - neural-surrogates
+  - code-generation
+  - sovereign-ai
+license: Apache-2.0
+license-url: "https://www.apache.org/licenses/LICENSE-2.0"
+repository-code: "https://github.com/maurinl26/fortranspire"
+url: "https://github.com/maurinl26/fortranspire"
+version: "0.1.0"
+date-released: "2026-06-17"
+identifiers:
+  - description: "Latest GitHub release"
+    type: url
+    value: "https://github.com/maurinl26/fortranspire/releases/latest"
+
+# JOSS paper (replace with the published DOI once the submission is accepted).
+preferred-citation:
+  type: article
+  title: "fortranspire: an LLM-driven Model Context Protocol pipeline for porting legacy Fortran HPC kernels to GPU (OpenACC) and differentiable JAX"
+  authors:
+    - given-names: "Loïc"
+      family-names: "Maurin"
+      orcid: "https://orcid.org/0009-0004-8117-4850"
+      affiliation: "External Lecturer, École Nationale de la Météorologie, Toulouse, France"
+  journal: "Journal of Open Source Software"
+  year: 2026
+  # doi: "10.21105/joss.XXXXX"   # uncomment once JOSS assigns the DOI
+  # volume:
+  # issue:
+  # pages:

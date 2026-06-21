@@ -1,44 +1,143 @@
 [project]
-name = "local-code-agent"
+name = "fortranspire"
 version = "0.1.0"
 description = "A 100% Private MCP Coding Assistant and Scientific Porting Pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [
-    { name = "CodeAgent", email = "auto@example.com" }
+    { name = "Loïc Maurin", email = "maurin.loic.ac@gmail.com" }
 ]
+license = { text = "Apache-2.0" }
+keywords = [
+    "fortran",
+    "hpc",
+    "gpu",
+    "openacc",
+    "jax",
+    "cython",
+    "loki",
+    "mcp",
+    "model-context-protocol",
+    "mistral",
+    "code-generation",
+    "scientific-computing",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Fortran",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Code Generators",
+    "Topic :: Software Development :: Compilers",
+]
+# ── Core dependencies ──────────────────────────────────────────────────────
+# Minimal footprint required by `agent-analyze` (Loki AST, no LLM, no GPU).
+# Everything else lives behind an optional extra; pick the ones that match
+# what you actually run. See `[project.optional-dependencies]` below.
 dependencies = [
+    # ECMWF Loki — Fortran source-to-source transformation framework.
+    # Not on PyPI (the PyPI `loki` is an unrelated astronomy package), so we
+    # pin to a git tag. Override locally with a `[tool.uv.sources]` entry if
+    # you need to develop against a fork (see `loki-source` below).
+    "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7",
+    "numpy",
+    "python-dotenv>=1.0",
+    "langgraph>=0.2.0",   # imported at module-load by parser_phase1; ~5 MB
+]
+
+[project.urls]
+Homepage      = "https://github.com/maurinl26/fortranspire"
+Documentation = "https://fortranspire.readthedocs.io"
+Repository    = "https://github.com/maurinl26/fortranspire"
+Issues        = "https://github.com/maurinl26/fortranspire/issues"
+Changelog     = "https://github.com/maurinl26/fortranspire/blob/main/docs/changelog.md"
+
+[project.optional-dependencies]
+
+# CPU-only, no LLM, no GPU. Already covered by the core deps above — this
+# alias exists so `uv sync --extra cpu` is a discoverable, self-documenting
+# install path for CI runners and the Apptainer.analyze image.
+cpu = []
+
+# Fortran → GPU + Cython transformation pipeline (Phase 1).
+# Pulls in the langchain stack and the Cython build chain. The actual GPU
+# compilation requires `nvfortran` on the host — not a Python dependency.
+gpu = [
     "langchain>=0.3",
     "langchain-core>=0.3",
     "langchain-community>=0.3",
     "langchain-mistralai>=0.1",
     "langchain-openai>=0.1",
-    "loki @ file://localhost/Users/loicmaurin/PycharmProjects/coding-agent/loki",
-    "python-dotenv>=1.0",
-    "fastmcp>=2.10.0",
-    "langgraph>=0.2.0",
-    "numpy",
     "Cython>=3.0",
-    "pytest",
-    # JAX — Phase 2 pipeline (expérimental)
+    # Fortran-ecosystem helpers
+    "fprettify>=0.3.7",   # source formatter — used by agent-format + Phase 1 post-step
+    "fortls>=3.1",        # Language Server — oracle for symbol lookup (no hallucinations)
+]
+
+# MCP server (FastMCP HTTP/SSE) — exposes the transformation pipeline
+# as MCP tools. Requires the [gpu] extra because the tools call into it.
+mcp = [
+    "fortranspire[gpu]",
+    "fastmcp>=2.10.0",
+]
+
+# Phase 2 — Fortran → JAX (experimental, differentiable).
+# Pulls in JAX + the LangChain stack (Phase 2 translation is LLM-driven too).
+jax = [
+    "fortranspire[gpu]",
     "jax[cpu]>=0.4.0",
     "flax>=0.8.0",
     "equinox>=0.11.0",
 ]
 
+# Convenience meta-extra: everything except docs / tests.
+all = [
+    "fortranspire[gpu]",
+    "fortranspire[mcp]",
+    "fortranspire[jax]",
+]
+
+docs = [
+    "sphinx>=7.3,<9",
+    "furo>=2024.5",
+    "myst-parser>=3.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-design>=0.6",
+    "linkify-it-py>=2.0",
+]
+tests = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
 [project.scripts]
 # Main Server
-run-mcp = "local_code_agent.server:main"
+run-mcp = "fortranspire.server:main"
+
+# Static analysis only (no LLM, CI-friendly)
+agent-analyze  = "fortranspire.agent.cli:run_analyze"
+
+# Documentation generator — inline !> docstrings + optional Sphinx site
+agent-doc      = "fortranspire.agent.cli:run_doc"
+
+# Fortran source formatter (fprettify wrapper, sensible defaults)
+agent-format   = "fortranspire.agent.cli:run_format"
 
 # Phase 1 : Fortran → Fortran GPU + Cython
-agent-gpu      = "local_code_agent.agent.cli:run_translate_gpu"
+agent-gpu      = "fortranspire.agent.cli:run_translate_gpu"
 
 # Phase 2 : Fortran → JAX (legacy)
-agent-translate = "local_code_agent.agent.cli:run_translate"
-agent-profile   = "local_code_agent.agent.cli:run_profile"
+agent-translate = "fortranspire.agent.cli:run_translate"
+agent-profile   = "fortranspire.agent.cli:run_profile"
 
 # Master dispatcher (toutes les actions)
-agent-pipeline  = "local_code_agent.agent.cli:main"
+agent-pipeline  = "fortranspire.agent.cli:main"
 
 [build-system]
 requires = ["hatchling"]
