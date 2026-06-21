@@ -150,29 +150,39 @@ def profile_kernels(filepath: str) -> str:
     return str(result["performance_metrics"])
 
 
-if __name__ == "__main__":
-    host    = os.getenv("MCP_HOST", "0.0.0.0")
-    port    = int(os.getenv("MCP_PORT", "8000"))
-    api_key = os.getenv("API_KEY")
+def _install_auth(mcp_instance) -> None:
+    """Attach the auth + rate-limit + audit middleware when configured.
 
-    if api_key:
-        print(f"[Sécurité] Auth activée (Bearer {api_key[:3]}***)")
+    Backwards-compatible: when no registry file and no `API_KEY` env are
+    set, the server runs unauthenticated (legacy behavior). When `API_KEY`
+    is set, it's promoted to a single-token registry entry. When
+    `FORTRANSPIRE_TOKENS_FILE` is set, the JSON registry takes precedence.
+    """
+    from fortranspire.security.auth import RateLimiter, TokenRegistry, build_middleware
 
-        from starlette.middleware.base import BaseHTTPMiddleware
-        from starlette.responses import JSONResponse
+    registry = TokenRegistry.from_env()
+    if not registry:
+        print("[Sécurité] Pas de token configuré — serveur public (API_KEY ou "
+              "FORTRANSPIRE_TOKENS_FILE pour activer l'auth).")
+        return
 
-        class AuthMiddleware(BaseHTTPMiddleware):
-            async def dispatch(self, request, call_next):
-                if request.url.path in ["/health", "/ping"]:
-                    return await call_next(request)
-                auth = request.headers.get("Authorization")
-                if not auth or auth != f"Bearer {api_key}":
-                    return JSONResponse({"detail": "Unauthorized."}, status_code=401)
-                return await call_next(request)
+    print(f"[Sécurité] Auth activée — {len(registry)} token(s), "
+          f"audit log → {os.getenv('FORTRANSPIRE_AUDIT_PATH', 'output/audit.jsonl')}")
 
-        if hasattr(mcp, "_app"):
-            mcp._app.add_middleware(AuthMiddleware)
-        else:
-            print("[Erreur] Impossible de sécuriser l'API : app interne non accessible.")
+    middleware_cls = build_middleware(registry, RateLimiter())
+    if hasattr(mcp_instance, "_app"):
+        mcp_instance._app.add_middleware(middleware_cls)
+    else:
+        print("[Erreur] Impossible de sécuriser l'API : app interne non accessible.")
 
+
+def main() -> None:
+    """Console entry point — `run-mcp`."""
+    host = os.getenv("MCP_HOST", "0.0.0.0")
+    port = int(os.getenv("MCP_PORT", "8000"))
+    _install_auth(mcp)
     mcp.run(transport="sse", host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()
