@@ -20,6 +20,8 @@ import pytest
 
 from fortranspire.agent.document import (
     GENERATED_MARKER,
+    _build_user_prompt,
+    _fortls_context,
     extract_routines,
     generate_sphinx_site,
     inject_inline_docstrings,
@@ -84,6 +86,45 @@ def test_cli_no_llm_dry_run(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
     assert GENERATED_MARKER in out
     # Original file must remain unchanged in --dry-run mode.
     assert GENERATED_MARKER not in target.read_text()
+
+
+def test_fortls_context_no_workspace_is_empty():
+    # When workspace=None, return "" immediately — no fortls subprocess.
+    assert _fortls_context(None, "any_name") == ""
+
+
+def test_fortls_context_unknown_workspace_is_empty(tmp_path: Path):
+    # When the workspace exists but contains no Fortran (or fortls isn't
+    # installed), the helper degrades gracefully to "".
+    result = _fortls_context(str(tmp_path), "nonexistent_routine")
+    assert result == ""
+
+
+def test_build_user_prompt_includes_fortls_section_when_present(monkeypatch: pytest.MonkeyPatch):
+    # Stub the oracle so the test doesn't need fortls on PATH.
+    import fortranspire.agent.document as doc_mod
+    monkeypatch.setattr(doc_mod, "_fortls_context",
+                        lambda ws, name: "Symbols co-located with `foo`:\n  - subroutine `bar`")
+
+    fake = type("R", (), {
+        "name": "foo", "kind": "subroutine",
+        "arguments": ["x"], "intent_map": {"x": "IN"},
+        "has_io": False, "has_save": False,
+    })()
+    prompt = _build_user_prompt(fake, "subroutine foo(x)\nend subroutine",
+                                 workspace="/tmp/fake")
+    assert "Symbols co-located with `foo`" in prompt
+    assert "subroutine `bar`" in prompt
+
+
+def test_build_user_prompt_no_fortls_when_workspace_omitted():
+    fake = type("R", (), {
+        "name": "foo", "kind": "subroutine",
+        "arguments": ["x"], "intent_map": {"x": "IN"},
+        "has_io": False, "has_save": False,
+    })()
+    prompt = _build_user_prompt(fake, "subroutine foo(x)\nend subroutine")
+    assert "Symbols co-located" not in prompt
 
 
 def test_cli_site_only(tmp_path: Path):

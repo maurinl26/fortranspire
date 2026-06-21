@@ -148,7 +148,30 @@ _RESPONSE_SCHEMA_HINT = textwrap.dedent("""\
 """)
 
 
-def _build_user_prompt(routine: RoutineDoc, body: str) -> str:
+def _fortls_context(workspace: str | None, routine_name: str) -> str:
+    """Best-effort enrichment via the Fortran Language Server.
+
+    Returns a short list of neighbouring symbols (other routines / modules
+    in the same file) so the LLM has structural context beyond the body
+    it's documenting. Silently returns `""` when fortls is missing or
+    workspace can't be probed — keeps the documenter usable without the
+    `[gpu]` extra installed.
+    """
+    if not workspace:
+        return ""
+    try:
+        from fortranspire.agent.fortls_oracle import summarize_context
+        return summarize_context(workspace, routine_name)
+    except Exception:
+        return ""
+
+
+def _build_user_prompt(
+    routine: RoutineDoc,
+    body: str,
+    *,
+    workspace: str | None = None,
+) -> str:
     flags = []
     if routine.has_io:    flags.append("contains I/O (PRINT/WRITE/READ)")
     if routine.has_save:  flags.append("uses SAVE — hidden state across calls")
@@ -156,9 +179,15 @@ def _build_user_prompt(routine: RoutineDoc, body: str) -> str:
     args_line = ", ".join(f"{a}({routine.intent_map.get(a, '?')})"
                           for a in routine.arguments) or "(no arguments)"
     truncated = body if len(body) < 4000 else body[:4000] + "\n... [truncated]"
+
+    # Optional fortls oracle context — appears as an extra block so the
+    # LLM can use it without re-parsing the source itself.
+    fortls_block = _fortls_context(workspace, routine.name)
+    fortls_section = f"\n{fortls_block}\n" if fortls_block else ""
+
     return (
         f"Routine: {routine.kind.upper()} {routine.name}\n"
-        f"Arguments: {args_line}{flag_line}\n\n"
+        f"Arguments: {args_line}{flag_line}{fortls_section}\n\n"
         "Source:\n```fortran\n"
         f"{truncated}\n```\n\n"
         f"{_RESPONSE_SCHEMA_HINT}"
@@ -179,13 +208,23 @@ def _parse_llm_json(blob: str) -> dict | None:
         return None
 
 
-def generate_narrative(routine: RoutineDoc, body: str) -> None:
+def generate_narrative(
+    routine: RoutineDoc,
+    body: str,
+    *,
+    workspace: str | None = None,
+) -> None:
     """Populate ``routine.short_summary`` / ``detailed`` / ``params`` via the LLM.
 
     Uses ``llm.with_structured_output(DocRoutineOutput)`` so the model returns
     a typed Pydantic object directly — no regex parsing of the response.
     Falls back to the legacy regex JSON parser if the structured call raises
     (some self-hosted backends don't yet implement function/JSON-schema mode).
+
+    When ``workspace`` is provided and `fortls` is on PATH, the prompt is
+    enriched with neighbouring-symbol context fetched from the Fortran
+    Language Server — grounds the narrative and reduces hallucinations
+    about names/relationships in the surrounding module.
 
     Lazy-imports the LLM stack so ``--no-llm`` runs don't need any langchain deps.
     """
@@ -197,7 +236,7 @@ def generate_narrative(routine: RoutineDoc, body: str) -> None:
     llm = get_llm("code")  # Codestral handles narrative-from-code well, cheaper than Mistral-Large
     messages = [
         SystemMessage(content=_get_system_prompt()),
-        HumanMessage(content=_build_user_prompt(routine, body)),
+        HumanMessage(content=_build_user_prompt(routine, body, workspace=workspace)),
     ]
 
     result: DocRoutineOutput | None = None
@@ -532,9 +571,10 @@ def main(argv: list[str] | None = None) -> int:
             if d.parse_error:
                 continue
             source_text = Path(d.file).read_text(encoding="utf-8")
+            workspace = str(Path(d.file).parent)
             for r in d.routines:
                 try:
-                    generate_narrative(r, source_text)
+                    generate_narrative(r, source_text, workspace=workspace)
                 except Exception as exc:
                     print(f"  ⚠ {Path(d.file).name}::{r.name}  LLM call failed: {exc}",
                           file=sys.stderr)
