@@ -27,29 +27,12 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     # Reasoning stage: data-flow analysis to place !$acc data copyin/copy clauses
     # correctly around the time loop. Wrong placement = silent GPU corruption.
     from fortranspire.llm import get_llm
+    from fortranspire.prompts.loader import load_prompt
     from langchain_core.messages import SystemMessage, HumanMessage
     llm = get_llm("reasoning")
 
     # ── 4a : Kernel subroutines ───────────────────────────────────────────────
-    kernel_system = SystemMessage(content=(
-        "You are an OpenACC GPU expert for scientific Fortran.\n"
-        "Add OpenACC directives to parallelize this subroutine on NVIDIA A100 GPUs.\n"
-        "Compiler: nvfortran -acc -gpu=cc80 (Ampere)\n\n"
-        "CRITICAL — PURE/ELEMENTAL compatibility:\n"
-        "  The Fortran standard forbids OpenACC compute directives (!$acc parallel, !$acc kernels)\n"
-        "  inside PURE or ELEMENTAL procedures. If the subroutine has PURE or ELEMENTAL in its\n"
-        "  declaration, REMOVE that keyword. The functional purity is preserved as a semantic\n"
-        "  property (all INTENT are explicit, no I/O, no SAVE) — but the Fortran keyword must\n"
-        "  be absent when !$acc parallel loop is present.\n\n"
-        "Guidelines for finite-difference stencil subroutines:\n"
-        "  - Remove PURE / ELEMENTAL from the subroutine statement\n"
-        "  - Add !$acc parallel loop collapse(2) before the outermost 2D loop nest\n"
-        "  - Add private(...) clause for scalar temporaries computed inside the loop\n"
-        "  - Do NOT add data movement clauses here — handled by the driver !$acc data region\n"
-        "  - !$acc end parallel after end of loop nest\n"
-        "  - The subroutine does NOT need !$acc routine — it's called from host, not device\n"
-        "Return ONLY the modified Fortran subroutine, no prose."
-    ))
+    kernel_system = SystemMessage(content=load_prompt("openacc_kernel", version="v1"))
 
     updated: List[KernelInfo] = []
     for kernel in state.get("kernel_results", []):
@@ -123,21 +106,7 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     driver_with_acc = ""
 
     if driver_src:
-        driver_system = SystemMessage(content=(
-            "You are an OpenACC GPU expert.\n"
-            "Add an !$acc data region around the time loop in this Fortran PROGRAM driver.\n"
-            "The subroutines inside the loop are already annotated with !$acc parallel loop.\n\n"
-            "Guidelines:\n"
-            "  - !$acc data copyin(lambda,mu,rho,b_x,b_x_half,b_y,b_y_half,a_x,...) "
-            "copy(vx,vy,sigma_xx,sigma_yy,sigma_xy,memory_dvx_dx,...) before the time loop\n"
-            "  - INTENT(IN) arrays  → copyin(...)\n"
-            "  - INTENT(INOUT) arrays (field + memory arrays) → copy(...)\n"
-            "  - Just before each periodic I/O block (if mod(it,IT_DISPLAY)==0): "
-            "add !$acc update host(vx,vy) to transfer velocity fields for PRINT/image output\n"
-            "  - !$acc end data after end of time loop\n"
-            "  - Keep ALL existing code and I/O intact — only add !$acc directives\n"
-            "Return ONLY the modified Fortran PROGRAM."
-        ))
+        driver_system = SystemMessage(content=load_prompt("openacc_driver", version="v1"))
         driver_prompt = HumanMessage(content=(
             f"Add !$acc data region around the time loop.\n"
             f"Kernel subroutines called inside the loop: {state.get('kernel_names', [])}\n\n"

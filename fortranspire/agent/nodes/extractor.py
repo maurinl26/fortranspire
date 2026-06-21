@@ -54,7 +54,8 @@ def extractor_agent(state: Phase1State) -> dict:
     feature_flags = ast_info.get("feature_flags", {})
     has_pointers  = ast_info.get("has_pointers", False)
 
-    # Build context-dependent rule sections
+    # Build context-dependent rule sections (passed to the prompt template
+    # via load_prompt(); empty string = omitted block).
     common_rules = ""
     if common_blocks:
         names = ", ".join(f"/{b['name']}/" for b in common_blocks)
@@ -72,16 +73,6 @@ def extractor_agent(state: Phase1State) -> dict:
         "    INTENT(INOUT) arguments of the subroutine. The driver declares them and\n"
         "    passes them at each call. Remove the SAVE attribute from the declaration.\n"
         "  Example: 'real, save :: psi_vx = 0.0' → 'real(dp), intent(inout) :: psi_vx'\n"
-    )
-
-    type_rules = (
-        "\nTYPING — mandatory (explicit KIND, no compiler inference):\n"
-        "  - Add at MODULE top: 'integer, parameter :: dp = selected_real_kind(15, 307)'\n"
-        "  - Replace REAL / DOUBLE PRECISION / REAL*8 / REAL(8) → real(dp)\n"
-        "  - Replace REAL*4 / REAL(4) → real(sp) with 'integer, parameter :: sp = selected_real_kind(6, 37)'\n"
-        "  - All real literals: 1.0 → 1.0_dp, 0.0d0 → 0.0_dp\n"
-        "  - Explicit casts: real(x, dp) — never leave implicit promotion.\n"
-        "  - IMPLICIT NONE mandatory in MODULE and in every SUBROUTINE.\n"
     )
 
     flag_rules = ""
@@ -106,45 +97,14 @@ def extractor_agent(state: Phase1State) -> dict:
             "  - Remove all 'field => target' association statements.\n"
         )
 
-    system = SystemMessage(content=(
-        "You are a Fortran HPC expert specializing in GPU refactoring.\n"
-        "Your task: given a monolithic Fortran PROGRAM, extract ONLY the inner 2D spatial\n"
-        "finite-difference loop nests into individual subroutines inside a Fortran MODULE.\n\n"
-        "=== WHAT TO EXTRACT (GPU kernels) ===\n"
-        "  - ONLY the inner 2D loop nests: 'do j=... / do i=...' blocks that update\n"
-        "    field arrays (velocities, stresses, memory PML variables).\n"
-        "  - Each distinct 2D loop nest → ONE subroutine (e.g. update_stress_xx_yy,\n"
-        "    update_stress_xy, update_velocity_x, update_velocity_y).\n"
-        "  - Expect 3–6 kernel subroutines for typical seismic CPML codes.\n\n"
-        "=== WHAT NOT TO EXTRACT (stays in PROGRAM driver) ===\n"
-        "  - Utility/I/O subroutines already defined in CONTAINS (write_seismograms,\n"
-        "    create_color_image, etc.) — leave them in the driver unchanged.\n"
-        "  - The time loop itself (do it = 1, NSTEP) — stays in the driver.\n"
-        "  - Initialization loops (material properties, PML coefficients) — stays in driver.\n"
-        "  - NEVER wrap the entire PROGRAM or time loop into a single subroutine.\n\n"
-        "=== ARGUMENT RULES (mandatory) ===\n"
-        "  - EVERY subroutine MUST have an explicit, non-empty argument list.\n"
-        "  - NEVER produce 'subroutine foo()' with an empty list — all variables used\n"
-        "    inside the subroutine must appear as INTENT-qualified dummy arguments.\n"
-        "  - Arrays read AND written in-place: INTENT(INOUT)\n"
-        "  - Arrays only read: INTENT(IN)\n"
-        "  - Scalar parameters (DELTAX, DELTAY, DELTAT): INTENT(IN)\n"
-        "  - Grid sizes (NX, NY): INTENT(IN), INTEGER\n"
-        "  - PML coefficient arrays (b_x, a_x, K_x, ...): INTENT(IN)\n\n"
-        "=== MODULE RULES ===\n"
-        "  - MODULE contains ONLY the extracted kernel subroutines, nothing else.\n"
-        "  - 'implicit none' at MODULE level and inside every subroutine.\n"
-        "  - Keep loop bounds identical to the original code.\n"
-        "  - No I/O (PRINT/WRITE/READ) inside the extracted subroutines.\n\n"
-        "=== DRIVER RULES ===\n"
-        "  - USE the module at the top of the PROGRAM.\n"
-        "  - Replace each inline 2D loop nest with a CALL to the corresponding subroutine.\n"
-        "  - Keep ALL initialization, I/O, energy computation, seismogram recording.\n"
-        "  - Keep the CONTAINS section with its utility subroutines unchanged.\n"
-        + type_rules + common_rules + save_rules + flag_rules + pointer_rules +
-        "\nReturn TWO clearly separated code blocks:\n"
-        "  [MODULE] ... [/MODULE]\n"
-        "  [DRIVER] ... [/DRIVER]"
+    from fortranspire.prompts.loader import load_prompt
+
+    system = SystemMessage(content=load_prompt(
+        "extractor", version="v1",
+        common_rules=common_rules,
+        save_rules=save_rules,
+        flag_rules=flag_rules,
+        pointer_rules=pointer_rules,
     ))
 
     prompt = HumanMessage(content=(
