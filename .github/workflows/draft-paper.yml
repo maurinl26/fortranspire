@@ -1,0 +1,35 @@
+name: JOSS paper draft
+
+on:
+  push:
+    paths:
+      - paper.md
+      - paper.bib
+      - .github/workflows/draft-paper.yml
+  pull_request:
+    paths:
+      - paper.md
+      - paper.bib
+      - .github/workflows/draft-paper.yml
+  workflow_dispatch:
+
+jobs:
+  paper:
+    runs-on: ubuntu-latest
+    name: Render paper.md via Open Journals Docker action
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build draft PDF
+        uses: openjournals/openjournals-draft-action@master
+        with:
+          journal: joss
+          paper-path: paper.md
+
+      - name: Upload rendered PDF as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: paper
+          path: paper.pdf
+          if-no-files-found: error

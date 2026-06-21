@@ -1,0 +1,49 @@
+{
+  "title": "fortranspire: LLM + MCP pipeline porting legacy Fortran HPC kernels to OpenACC GPU and differentiable JAX",
+  "description": "<p><strong>fortranspire</strong> is an open-source Model Context Protocol (MCP) server and CLI that incrementally transforms legacy Fortran 90 scientific code into GPU-accelerated (OpenACC), Python-callable (Cython / scikit-build), and optionally differentiable (JAX) form. It combines deterministic Loki AST analysis with targeted LLM calls against any OpenAI-compatible endpoint (Mistral, vLLM, TGI, Ollama).</p>",
+  "license": "Apache-2.0",
+  "upload_type": "software",
+  "access_right": "open",
+  "creators": [
+    {
+      "name": "Maurin, Loïc",
+      "affiliation": "External Lecturer, École Nationale de la Météorologie, Toulouse, France",
+      "orcid": "0009-0004-8117-4850"
+    }
+  ],
+  "keywords": [
+    "Fortran",
+    "HPC",
+    "GPU",
+    "OpenACC",
+    "JAX",
+    "Cython",
+    "scikit-build",
+    "Loki",
+    "ECMWF",
+    "Model Context Protocol",
+    "MCP",
+    "large language models",
+    "Mistral",
+    "scientific computing",
+    "seismic imaging",
+    "numerical weather prediction",
+    "neural surrogates",
+    "code generation",
+    "agent",
+    "sovereign AI"
+  ],
+  "communities": [
+    {
+      "identifier": "joss"
+    }
+  ],
+  "related_identifiers": [
+    {
+      "identifier": "https://github.com/maurinl26/fortranspire",
+      "relation": "isSupplementTo",
+      "scheme": "url"
+    }
+  ],
+  "language": "eng"
+}

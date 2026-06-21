@@ -1,0 +1,113 @@
+name: Fortran static analysis
+
+# Runs the deterministic Loki-based parser on every PR and push.
+# No LLM is called, no token is consumed — safe on forks.
+# Findings are uploaded as SARIF and surface as inline PR annotations
+# via GitHub Code Scanning.
+
+on:
+  pull_request:
+    paths:
+      - '**/*.f90'
+      - '**/*.F90'
+      - 'local_code_agent/**'
+      - '.github/workflows/analyze.yml'
+  push:
+    branches: [main]
+    paths:
+      - '**/*.f90'
+      - '**/*.F90'
+      - 'local_code_agent/**'
+      - '.github/workflows/analyze.yml'
+  workflow_dispatch:
+    inputs:
+      target_path:
+        description: 'Path to analyze (file or directory)'
+        required: false
+        default: '.'
+
+permissions:
+  contents: read
+  security-events: write   # required to upload SARIF
+  pull-requests: read
+
+jobs:
+  analyze:
+    name: agent-analyze (Loki, no LLM)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2   # need HEAD~1 to diff changed files on PR
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install project (no LLM extras needed)
+        run: uv sync --no-dev
+
+      - name: Pick paths to analyze
+        id: paths
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "targets=${{ github.event.inputs.target_path }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+            changed=$(git diff --name-only --diff-filter=ACMR \
+              "origin/${{ github.base_ref }}...HEAD" \
+              | grep -E '\.(f90|F90)$' || true)
+          else
+            changed=$(git diff --name-only --diff-filter=ACMR HEAD~1 HEAD \
+              | grep -E '\.(f90|F90)$' || true)
+          fi
+          if [ -z "$changed" ]; then
+            echo "No Fortran files changed — analyzer will scan the whole repo."
+            echo "targets=." >> "$GITHUB_OUTPUT"
+          else
+            echo "Changed Fortran files:"
+            echo "$changed"
+            echo "targets<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$changed" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run analyzer (text — console)
+        continue-on-error: true
+        run: |
+          # shellcheck disable=SC2086
+          uv run agent-analyze --no-color ${{ steps.paths.outputs.targets }}
+
+      - name: Run analyzer (SARIF — for Code Scanning)
+        run: |
+          # shellcheck disable=SC2086
+          uv run agent-analyze \
+            --format sarif \
+            --fail-on error \
+            --output fortranspire.sarif \
+            ${{ steps.paths.outputs.targets }}
+
+      - name: Upload SARIF to GitHub Code Scanning
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: fortranspire.sarif
+          category: fortranspire
+
+      - name: Upload SARIF as build artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fortranspire-sarif
+          path: fortranspire.sarif
+          if-no-files-found: warn

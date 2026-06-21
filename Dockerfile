@@ -2,8 +2,11 @@
 FROM python:3.12-slim AS builder
 
 WORKDIR /build
-COPY local_code_agent/requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# Image runtime du serveur MCP = pipeline GPU + serveur MCP, sans JAX
+# (le portage JAX n'est pas un cas d'usage du serveur HTTP).
+COPY pyproject.toml .
+COPY fortranspire/ ./fortranspire/
+RUN pip install --no-cache-dir --prefix=/install -e ".[mcp]"
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim
@@ -19,7 +22,7 @@ WORKDIR /app
 COPY --from=builder /install /usr/local
 
 # Copie le code source de l'agent uniquement
-COPY local_code_agent/ ./local_code_agent/
+COPY fortranspire/ ./fortranspire/
 
 # Variables d'environnement par défaut (overridables via docker-compose)
 ENV OLLAMA_BASE_URL=http://ollama:11434 \
@@ -39,4 +42,4 @@ EXPOSE 8000
 VOLUME ["/workspace"]
 
 # Lance le serveur MCP
-CMD ["python", "-m", "local_code_agent.server"]
+CMD ["python", "-m", "fortranspire.server"]

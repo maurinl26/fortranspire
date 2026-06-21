@@ -1,0 +1,114 @@
+{
+  "@context": "https://doi.org/10.5063/schema/codemeta-2.0",
+  "@type": "SoftwareSourceCode",
+  "identifier": "fortranspire",
+  "name": "fortranspire",
+  "version": "0.1.0",
+  "dateCreated": "2026-06-17",
+  "dateModified": "2026-06-21",
+  "datePublished": "2026-06-17",
+  "license": "https://spdx.org/licenses/Apache-2.0",
+  "url": "https://github.com/maurinl26/fortranspire",
+  "codeRepository": "git+https://github.com/maurinl26/fortranspire.git",
+  "issueTracker": "https://github.com/maurinl26/fortranspire/issues",
+
+  "description": "An LLM + Model Context Protocol pipeline that incrementally ports legacy Fortran 90 HPC kernels to GPU (OpenACC) + Cython (Phase 1) and to differentiable JAX (Phase 2). Built on the ECMWF Loki AST framework; calls any OpenAI-compatible endpoint (Mistral La Plateforme by default; self-hosted vLLM/TGI/Ollama for full sovereignty). Bundles a documentation-only mode, a Loki-only static analyzer for CI, and a per-stage Mistral model selector (Codestral for code-gen, Mistral-Large for reasoning).",
+
+  "applicationCategory": "Scientific Computing",
+  "applicationSubCategory": "HPC code transformation",
+  "operatingSystem": ["Linux", "macOS"],
+  "programmingLanguage": ["Python", "Fortran"],
+  "runtimePlatform": ["Python 3.11", "Python 3.12"],
+
+  "keywords": [
+    "fortran",
+    "hpc",
+    "gpu",
+    "openacc",
+    "jax",
+    "cython",
+    "loki",
+    "model-context-protocol",
+    "mcp",
+    "mistral",
+    "codestral",
+    "large-language-models",
+    "scientific-computing",
+    "seismic-imaging",
+    "numerical-weather-prediction",
+    "neural-surrogates",
+    "code-generation",
+    "sovereign-ai",
+    "agent"
+  ],
+
+  "softwareRequirements": [
+    "Python >= 3.11",
+    "Loki (git+https://github.com/ecmwf-ifs/loki@0.3.7)",
+    "numpy",
+    "langgraph >= 0.2.0"
+  ],
+
+  "author": [
+    {
+      "@type": "Person",
+      "givenName": "Loïc",
+      "familyName": "Maurin",
+      "email": "maurin.loic.ac@gmail.com",
+      "@id": "https://orcid.org/0009-0004-8117-4850",
+      "affiliation": {
+        "@type": "Organization",
+        "name": "École Nationale de la Météorologie",
+        "address": "Toulouse, France"
+      }
+    }
+  ],
+
+  "maintainer": [
+    {
+      "@type": "Person",
+      "givenName": "Loïc",
+      "familyName": "Maurin",
+      "email": "maurin.loic.ac@gmail.com",
+      "@id": "https://orcid.org/0009-0004-8117-4850"
+    }
+  ],
+
+  "developmentStatus": "active",
+  "isAccessibleForFree": true,
+  "isSourceCodeOf": "https://github.com/maurinl26/fortranspire",
+
+  "softwareHelp": [
+    {
+      "@type": "WebSite",
+      "name": "fortranspire documentation",
+      "url": "https://fortranspire.readthedocs.io"
+    }
+  ],
+
+  "readme": "https://github.com/maurinl26/fortranspire/blob/main/README.md",
+  "contIntegration": "https://github.com/maurinl26/fortranspire/actions",
+  "buildInstructions": "https://fortranspire.readthedocs.io/en/latest/getting-started/installation.html",
+
+  "funder": null,
+  "funding": null,
+
+  "referencePublication": {
+    "@type": "ScholarlyArticle",
+    "name": "fortranspire: an LLM-driven Model Context Protocol pipeline for porting legacy Fortran HPC kernels to GPU (OpenACC) and differentiable JAX",
+    "datePublished": "2026",
+    "publisher": {
+      "@type": "Organization",
+      "name": "The Open Journal"
+    },
+    "journal": "Journal of Open Source Software",
+    "author": [
+      {
+        "@type": "Person",
+        "givenName": "Loïc",
+        "familyName": "Maurin",
+        "@id": "https://orcid.org/0009-0004-8117-4850"
+      }
+    ]
+  }
+}

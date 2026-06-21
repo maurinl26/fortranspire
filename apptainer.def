@@ -1,5 +1,5 @@
 Bootstrap: docker-daemon
-From: ghcr.io/maurinl26/coding-agent-hpc:latest
+From: ghcr.io/maurinl26/fortranspire-hpc:latest
 # NOTE: En CI, Total buildera d'abord l'image Docker locale, puis Apptainer l'avalera via docker-daemon.
 # Alternative: Bootstrap: docker / From: nvcr.io/nvidia/jax:24.03-py3
 

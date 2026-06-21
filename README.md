@@ -8,6 +8,10 @@ Propulsé par Mistral-Large (endpoint souverain) · LangGraph · Loki (ECMWF)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
 [![MCP](https://img.shields.io/badge/MCP-Ready-green.svg)](https://modelcontextprotocol.io/)
+[![Documentation Status](https://readthedocs.org/projects/fortranspire/badge/?version=latest)](https://fortranspire.readthedocs.io/en/latest/?badge=latest)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.0000000.svg)](https://doi.org/10.5281/zenodo.0000000)
+[![JOSS draft](https://github.com/maurinl26/fortranspire/actions/workflows/draft-paper.yml/badge.svg)](https://github.com/maurinl26/fortranspire/actions/workflows/draft-paper.yml)
+[![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 </div>
 
@@ -169,9 +173,15 @@ la compréhension sémantique est indispensable (extraction de kernels, généra
 
 ```bash
 git clone <repo>
-cd coding-agent
+cd fortranspire
 cp .env.example .env
-uv sync
+
+# Choisir le profil d'installation selon l'usage :
+uv sync                       # core : analyze-only (~50 MB), pas de LLM
+uv sync --extra gpu           # Phase 1 : portage Fortran→GPU + Cython
+uv sync --extra mcp           # serveur MCP (HTTP/SSE) — inclut [gpu]
+uv sync --extra jax           # Phase 2 : Fortran → JAX
+uv sync --extra all           # tout (Phase 1 + Phase 2 + MCP)
 ```
 
 ### Connecter un endpoint Mistral (souverain)
@@ -214,7 +224,7 @@ MISTRAL_MODEL="mistralai/Mistral-Large-Instruct-2407"
 #### Vérification
 
 ```bash
-uv run python -c "from local_code_agent.llm import get_llm; print(get_llm().invoke('ping').content)"
+uv run python -c "from fortranspire.llm import get_llm; print(get_llm().invoke('ping').content)"
 # → réponse du modèle, ou erreur d'auth / endpoint
 ```
 
@@ -1156,6 +1166,136 @@ surrogate = FNO(modes=16, width=64)
 | `gfortran` (brew install gcc) | Vérification syntaxe locale |
 | `nvfortran` (NVIDIA HPC SDK) | Compilation Fortran GPU (-acc -gpu=cc80) |
 | `jax[cpu]`, `flax`, `equinox` | Phase 2 — pipeline JAX (expérimental) |
+
+---
+
+## 🔎 Mode analyse seule (CI hook)
+
+`agent-analyze` exécute uniquement l'étape Loki déterministe — **zéro
+appel LLM, zéro fichier réécrit**. Pratique pour valider la conformité
+GPU-ready d'un patch Fortran avant un appel LLM (coûteux) ou pour
+verrouiller en CI :
+
+```bash
+# Texte humain (TTY coloré)
+uv run agent-analyze src/
+
+# SARIF — uploadable vers GitHub Code Scanning (annotations inline PR)
+uv run agent-analyze --format sarif --output fortranspire.sarif src/
+
+# Exit ≠ 0 si la sévérité atteint le seuil (par défaut: error)
+uv run agent-analyze --fail-on warning src/
+```
+
+| Règle    | Sévérité  | Pattern détecté                                          |
+| -------- | --------- | -------------------------------------------------------- |
+| FORT001  | error     | I/O dans un kernel candidat (`PRINT`/`WRITE`/…)          |
+| FORT002  | warning   | `SAVE` (état caché — à promouvoir en `INTENT(INOUT)`)    |
+| FORT003  | warning   | `COMMON` block                                           |
+| FORT004  | warning   | Dépendance loop-carried suspectée                        |
+| FORT005  | warning   | `POINTER` (review pour data movement GPU)                |
+| FORT006  | note      | `IMPLICIT NONE` manquant                                 |
+| FORT007  | note      | `REAL`/`INTEGER` sans `KIND` explicite                   |
+| FORT008  | note      | Derived `TYPE` (candidat SoA conversion)                 |
+| FORT009  | error     | Échec de parsing Loki                                    |
+| FORT010  | warning   | Aucun compilateur Fortran sur PATH (validation impossible) |
+| FORT011  | warning   | Code `!$acc` détecté mais aucun compilateur OpenACC dispo  |
+
+`agent-analyze` sonde aussi `PATH` à chaque exécution pour détecter
+`gfortran` / `nvfortran` / `ifx` / `flang` / `lfortran`, leur version, et
+leur capacité OpenACC. Le rapport final inclut le compilateur recommandé
+pour le portage GPU :
+
+```text
+Toolchain:
+  gfortran   13.2.0       family=gnu            openacc=experimental (-fopenacc)
+  nvfortran  24.5         family=nvidia         openacc=native (-acc)
+  → recommended for GPU port: nvfortran 24.5
+```
+
+**Intégration CI fournies** :
+
+- **GitHub Actions** — [`.github/workflows/analyze.yml`](.github/workflows/analyze.yml)
+  s'exécute sur chaque PR + push `main`, upload SARIF vers Code Scanning
+  → annotations inline sur les PR (gratuit, marche sur fork).
+- **Apptainer HPC** — [`Apptainer.analyze`](Apptainer.analyze) construit
+  une image légère (pas de CUDA, pas de NVIDIA HPC SDK) pour exécuter
+  l'analyzer dans un job Slurm / Jenkins on-prem (Pangea, GENCI, OVH) :
+  `apptainer run fortranspire-analyze.sif --format sarif src/`.
+
+---
+
+## 📝 Documenter un code Fortran legacy (`agent-doc`)
+
+Feature autonome — utilisable indépendamment du portage GPU :
+
+```bash
+# Docstrings Doxygen-style insérés directement dans le source
+uv run agent-doc src/
+
+# + site Sphinx auto-généré sous documentation/<projet>/
+uv run agent-doc --sphinx src/
+
+# Site uniquement (sources intacts)
+uv run agent-doc --site-only src/
+
+# Pas d'appel LLM — signatures seules, gratuit, idempotent
+uv run agent-doc --no-llm src/
+```
+
+Deux niveaux de narration par routine : `@brief` (1 ligne, niveau
+stakeholder) et `@details` (2-4 phrases, niveau développeur — INTENT,
+invariants, pièges). Idempotent grâce au marker `@generated_by
+fortranspire`. ~0,10 USD pour 50 routines via Codestral.
+
+Voir [`docs/concepts/legacy-documentation.md`](docs/concepts/legacy-documentation.md).
+
+---
+
+## 🤝 Intégration Mistral
+
+L'agent est **Mistral-first sans être Mistral-only** : pivot sur tout
+endpoint OpenAI-compatible. Quatre chemins d'intégration sont documentés
+dans [`docs/concepts/mistral-integration.md`](docs/concepts/mistral-integration.md) :
+
+1. **LLM consumer** — La Plateforme Mistral comme moteur de génération
+   (configuration `.env`, déjà en place).
+2. **Modèle par étape** — `MISTRAL_MODEL_REASONING` (Mistral-Large pour
+   extractor + openacc) et `MISTRAL_MODEL_CODE` (Codestral pour le
+   wrapper Cython). Coût divisé par ~2, qualité préservée sur les étapes
+   sémantiques.
+3. **MCP provider** — le serveur `run-mcp` (FastMCP SSE) est consommable
+   par Le Chat, l'API Mistral Agents, Cursor, Claude Desktop, …
+4. **Connector directory Le Chat** — manifest prêt dans
+   [`integration/le-chat-connector.json`](integration/le-chat-connector.json),
+   soumission gated sur un endpoint MCP public stable (cf roadmap deploy).
+
+> Aucune variable `AZURE_*` n'est lue par l'agent — la dépendance
+> hyperscaler a été retirée au commit `ccfe221`.
+
+Un smoke-test de la clef Mistral et du wiring Agents API est disponible :
+[`examples/mistral_agents_api_smoke_test.py`](examples/mistral_agents_api_smoke_test.py).
+
+---
+
+## 📚 Documentation, citation, contribution
+
+- **Documentation Sphinx** : <https://fortranspire.readthedocs.io>
+- **Paper JOSS** : [`paper.md`](paper.md) (rendu en PDF par le workflow
+  [`draft-paper.yml`](.github/workflows/draft-paper.yml) à chaque push)
+- **Release Zenodo** : chaque tag Git tiré sur GitHub mint un DOI citable
+  via l'intégration GitHub ↔ Zenodo (métadonnées dans [`.zenodo.json`](.zenodo.json))
+- **Comment contribuer** : [`CONTRIBUTING.md`](CONTRIBUTING.md)
+- **Sécurité / divulgation responsable** : [`SECURITY.md`](SECURITY.md)
+- **Code of Conduct** : [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md)
+  (Contributor Covenant 2.1)
+
+### Citer ce projet
+
+Si `fortranspire` vous a été utile dans un travail académique ou
+industriel, merci de citer la release Zenodo (DOI auto-généré au prochain
+tag) et, à publication, le paper JOSS — voir [`paper.md`](paper.md) pour
+les métadonnées et [`paper.bib`](paper.bib) pour les références utilisées.
 
 ---
 
