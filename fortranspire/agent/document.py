@@ -182,29 +182,49 @@ def _parse_llm_json(blob: str) -> dict | None:
 def generate_narrative(routine: RoutineDoc, body: str) -> None:
     """Populate ``routine.short_summary`` / ``detailed`` / ``params`` via the LLM.
 
+    Uses ``llm.with_structured_output(DocRoutineOutput)`` so the model returns
+    a typed Pydantic object directly — no regex parsing of the response.
+    Falls back to the legacy regex JSON parser if the structured call raises
+    (some self-hosted backends don't yet implement function/JSON-schema mode).
+
     Lazy-imports the LLM stack so ``--no-llm`` runs don't need any langchain deps.
     """
     from langchain_core.messages import HumanMessage, SystemMessage
 
+    from fortranspire.agent.schemas import DocRoutineOutput
     from fortranspire.llm import get_llm
 
     llm = get_llm("code")  # Codestral handles narrative-from-code well, cheaper than Mistral-Large
-    response = llm.invoke([
+    messages = [
         SystemMessage(content=_get_system_prompt()),
         HumanMessage(content=_build_user_prompt(routine, body)),
-    ])
-    parsed = _parse_llm_json(response.content if hasattr(response, "content") else str(response))
-    if not parsed:
+    ]
+
+    result: DocRoutineOutput | None = None
+    try:
+        result = llm.with_structured_output(DocRoutineOutput).invoke(messages)
+    except Exception:
+        # Self-hosted vLLM / TGI without JSON-schema support → fall back to
+        # the legacy regex JSON parser. Same prompt, looser validation.
+        response = llm.invoke(messages)
+        raw = response.content if hasattr(response, "content") else str(response)
+        parsed = _parse_llm_json(raw)
+        if parsed:
+            try:
+                result = DocRoutineOutput(**parsed)
+            except Exception:
+                return  # malformed beyond recovery — keep defaults
+
+    if result is None:
         return
 
-    short = (parsed.get("short_summary") or "").strip()
-    detailed = (parsed.get("detailed") or "").strip()
-    params = parsed.get("params") or {}
-
+    short = (result.short_summary or "").strip()
+    detailed = (result.detailed or "").strip()
     if short:    routine.short_summary = short[:160]
     if detailed: routine.detailed = detailed
-    if isinstance(params, dict):
-        routine.params = {str(k): str(v).strip() for k, v in params.items() if v}
+    routine.params = {
+        str(k): str(v).strip() for k, v in (result.params or {}).items() if v
+    }
 
 
 # ── Inline docstring injection (idempotent) ─────────────────────────────────
