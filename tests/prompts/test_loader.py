@@ -25,9 +25,9 @@ def test_load_fr_variant():
 def test_lang_falls_back_to_english_when_missing(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.delenv("FORTRANSPIRE_LANG", raising=False)
     clear_cache()
-    # `openacc_kernel` only has an EN variant — requesting FR must transparently
-    # fall back to it rather than crash.
-    text = load_prompt("openacc_kernel", version="v1", lang="fr")
+    # Request a locale that doesn't exist (no `es/` directory shipped) — the
+    # loader must transparently fall back to the EN copy rather than crash.
+    text = load_prompt("openacc_kernel", version="v1", lang="es")
     assert "OpenACC GPU expert" in text
 
 
