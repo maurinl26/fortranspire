@@ -28,11 +28,14 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     # correctly around the time loop. Wrong placement = silent GPU corruption.
     from fortranspire.agent.schemas import OpenACCDriverOutput, OpenACCKernelOutput
     from fortranspire.llm import get_llm
+    from fortranspire.observability import tracer
+    from fortranspire.observability.llm_callback import token_callback
     from fortranspire.prompts.loader import load_prompt
     from langchain_core.messages import SystemMessage, HumanMessage
     llm = get_llm("reasoning")
     kernel_llm = llm.with_structured_output(OpenACCKernelOutput)
     driver_llm = llm.with_structured_output(OpenACCDriverOutput)
+    model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
 
     # ── 4a : Kernel subroutines ───────────────────────────────────────────────
     kernel_system = SystemMessage(content=load_prompt("openacc_kernel", version="v2"))
@@ -87,14 +90,17 @@ def openacc_insert_agent(state: Phase1State) -> dict:
             f"```fortran\n{src}\n```"
         ))
         try:
-            try:
-                result = kernel_llm.invoke([kernel_system, prompt])
-                annotated = _strip_markdown(result.annotated_fortran)
-            except Exception:
-                # Backend without structured-output support — fall through to
-                # raw invoke and strip Markdown fences off whatever comes back.
-                resp = llm.invoke([kernel_system, prompt])
-                annotated = _strip_markdown(resp.content)
+            with tracer.span(node="openacc_kernel", model=model_name) as span:
+                span.annotate(routine=name)
+                cfg = {"callbacks": [token_callback(span)]}
+                try:
+                    result = kernel_llm.invoke([kernel_system, prompt], config=cfg)
+                    annotated = _strip_markdown(result.annotated_fortran)
+                except Exception:
+                    # Backend without structured-output support — fall through to
+                    # raw invoke and strip Markdown fences off whatever comes back.
+                    resp = llm.invoke([kernel_system, prompt], config=cfg)
+                    annotated = _strip_markdown(resp.content)
             # Safety net: strip any remaining PURE/ELEMENTAL the LLM left
             annotated = re.sub(
                 r"^(\s*)(PURE\s+|ELEMENTAL\s+)+(SUBROUTINE\b)",
@@ -122,12 +128,14 @@ def openacc_insert_agent(state: Phase1State) -> dict:
             f"```fortran\n{driver_src}\n```"
         ))
         try:
-            try:
-                result = driver_llm.invoke([driver_system, driver_prompt])
-                driver_with_acc = _strip_markdown(result.annotated_fortran)
-            except Exception:
-                resp = llm.invoke([driver_system, driver_prompt])
-                driver_with_acc = _strip_markdown(resp.content)
+            with tracer.span(node="openacc_driver", model=model_name) as span:
+                cfg = {"callbacks": [token_callback(span)]}
+                try:
+                    result = driver_llm.invoke([driver_system, driver_prompt], config=cfg)
+                    driver_with_acc = _strip_markdown(result.annotated_fortran)
+                except Exception:
+                    resp = llm.invoke([driver_system, driver_prompt], config=cfg)
+                    driver_with_acc = _strip_markdown(resp.content)
             _save(_out("fortran_gpu") / f"driver_gpu{out_ext}", driver_with_acc)
             print("  driver → !$acc data region inserted")
         except Exception as e:

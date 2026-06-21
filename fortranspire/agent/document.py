@@ -233,26 +233,33 @@ def generate_narrative(
     from fortranspire.agent.schemas import DocRoutineOutput
     from fortranspire.llm import get_llm
 
+    from fortranspire.observability import tracer
+    from fortranspire.observability.llm_callback import token_callback
+
     llm = get_llm("code")  # Codestral handles narrative-from-code well, cheaper than Mistral-Large
     messages = [
         SystemMessage(content=_get_system_prompt()),
         HumanMessage(content=_build_user_prompt(routine, body, workspace=workspace)),
     ]
 
+    model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
     result: DocRoutineOutput | None = None
-    try:
-        result = llm.with_structured_output(DocRoutineOutput).invoke(messages)
-    except Exception:
-        # Self-hosted vLLM / TGI without JSON-schema support → fall back to
-        # the legacy regex JSON parser. Same prompt, looser validation.
-        response = llm.invoke(messages)
-        raw = response.content if hasattr(response, "content") else str(response)
-        parsed = _parse_llm_json(raw)
-        if parsed:
-            try:
-                result = DocRoutineOutput(**parsed)
-            except Exception:
-                return  # malformed beyond recovery — keep defaults
+    with tracer.span(node="doc_routine", model=model_name) as span:
+        span.annotate(routine=routine.name)
+        cfg = {"callbacks": [token_callback(span)]}
+        try:
+            result = llm.with_structured_output(DocRoutineOutput).invoke(messages, config=cfg)
+        except Exception:
+            # Self-hosted vLLM / TGI without JSON-schema support → fall back to
+            # the legacy regex JSON parser. Same prompt, looser validation.
+            response = llm.invoke(messages, config=cfg)
+            raw = response.content if hasattr(response, "content") else str(response)
+            parsed = _parse_llm_json(raw)
+            if parsed:
+                try:
+                    result = DocRoutineOutput(**parsed)
+                except Exception:
+                    return  # malformed beyond recovery — keep defaults
 
     if result is None:
         return
