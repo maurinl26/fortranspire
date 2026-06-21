@@ -1,7 +1,11 @@
 import argparse
 import sys
-from fortranspire.agent.translation_graph import translation_app, performance_agent
-from fortranspire.agent.translation_graph_phase1 import translation_app_phase1
+
+# `translation_graph` and `translation_graph_phase1` pull in the LangChain
+# stack at import time, which is only present when the [gpu] extra is
+# installed. Importing them eagerly at module top would break
+# `agent-analyze`, `agent-doc`, `agent-format` and `agent-explain` on the
+# core-only install. Pulled into the functions that actually need them.
 
 
 def _read_file(filepath: str) -> str:
@@ -15,6 +19,7 @@ def _read_file(filepath: str) -> str:
 
 def translate_file(filepath: str):
     """Phase 2 — pipeline JAX (legacy)."""
+    from fortranspire.agent.translation_graph import translation_app
     print(f"\n🔬 JAX Translation Pipeline")
     print(f"   Input : {filepath}")
     print(f"   Model : Mistral-Large (endpoint souverain)\n")
@@ -54,6 +59,7 @@ def translate_file_gpu(filepath: str):
     print(f"    ✅ validation      → gfortran syntax check × 2 + nvfortran")
     print(f"{'═' * 60}\n")
 
+    from fortranspire.agent.translation_graph_phase1 import translation_app_phase1
     code = _read_file(filepath)
     initial_state = {
         "fortran_filepath": filepath,
@@ -101,6 +107,7 @@ def translate_file_gpu(filepath: str):
 
 
 def profile_file(filepath: str):
+    from fortranspire.agent.translation_graph import performance_agent
     print(f"\n📊 Performance Profile")
     print(f"   Input : {filepath}\n")
     state = {"fortran_filepath": filepath, "performance_metrics": {}}
@@ -122,6 +129,12 @@ def run_doc():
     """agent-doc — LLM-driven Fortran documentation (inline + Sphinx site)."""
     from fortranspire.agent.document import main as _doc_main
     sys.exit(_doc_main())
+
+
+def run_explain():
+    """agent-explain — pre-flight cost + risk estimate (no LLM, no tokens)."""
+    from fortranspire.agent.explain import main as _explain_main
+    sys.exit(_explain_main())
 
 
 def run_format():

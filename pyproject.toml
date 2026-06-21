@@ -129,6 +129,9 @@ agent-doc      = "fortranspire.agent.cli:run_doc"
 # Fortran source formatter (fprettify wrapper, sensible defaults)
 agent-format   = "fortranspire.agent.cli:run_format"
 
+# Pre-flight cost + risk estimator (no LLM, no tokens — sales / RFI tool)
+agent-explain  = "fortranspire.agent.cli:run_explain"
+
 # Phase 1 : Fortran → Fortran GPU + Cython
 agent-gpu      = "fortranspire.agent.cli:run_translate_gpu"
 
