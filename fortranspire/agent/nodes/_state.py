@@ -45,5 +45,10 @@ class Phase1State(TypedDict):
     # Validation
     validation_passed: bool
     validation_log: str
+    # GPU directive family — "acc" (default, OpenACC) or "omp" (issue #18,
+    # OpenMP target). Picked by the openacc node to select the right
+    # prompt + emitted directives. Older callers that don't set this key
+    # get "acc" by .get() default → backwards-compatible.
+    gpu_pragma: str
     # Tracking
     executed_agents: List[str]

@@ -13,19 +13,36 @@ from fortranspire.agent.nodes._state import KernelInfo, Phase1State
 
 
 def openacc_insert_agent(state: Phase1State) -> dict:
-    """LLM : insère les pragmas OpenACC dans les kernels ET la région data du driver.
+    """LLM : insère les pragmas GPU (OpenACC ou OpenMP target) dans les kernels
+    et la région data du driver.
 
-    Deux cibles :
-      1. Chaque subroutine kernel → !$acc parallel loop collapse(2) sur les boucles 2D
-      2. Le driver PROGRAM → !$acc data ... région autour du time loop +
-         !$acc update host(...) avant chaque bloc I/O périodique
+    Le type de pragma est choisi par ``state["gpu_pragma"]`` :
+      - ``"acc"`` (défaut, rétrocompatible) → !$acc parallel loop / !$acc data
+      - ``"omp"`` (issue #18)               → !$omp target teams distribute
+                                              parallel do / !$omp target data
+
+    Deux cibles dans tous les cas :
+      1. Chaque subroutine kernel → pragmas autour des boucles 2D
+      2. Le driver PROGRAM → région data autour du time loop +
+         update host(...) avant chaque bloc I/O périodique
     """
+    gpu_pragma = (state.get("gpu_pragma") or "acc").lower()
+    if gpu_pragma not in ("acc", "omp"):
+        print(f"  WARNING: unknown gpu_pragma={gpu_pragma!r}, falling back to 'acc'")
+        gpu_pragma = "acc"
+
+    pragma_label   = "OpenACC" if gpu_pragma == "acc" else "OpenMP target"
+    kernel_prompt  = "openacc_kernel" if gpu_pragma == "acc" else "openmp_kernel"
+    driver_prompt  = "openacc_driver" if gpu_pragma == "acc" else "openmp_driver"
+    span_kernel    = "openacc_kernel" if gpu_pragma == "acc" else "openmp_kernel"
+    span_driver    = "openacc_driver" if gpu_pragma == "acc" else "openmp_driver"
+
     print(f"\n{SEP}")
-    print("  [OpenACC] Inserting OpenACC pragmas (kernels + driver data region)")
+    print(f"  [GPU pragmas: {pragma_label}] Inserting kernel + driver data region")
     print(SEP)
 
-    # Reasoning stage: data-flow analysis to place !$acc data copyin/copy clauses
-    # correctly around the time loop. Wrong placement = silent GPU corruption.
+    # Reasoning stage: data-flow analysis to place data clauses correctly
+    # around the time loop. Wrong placement = silent GPU corruption.
     from fortranspire.agent.schemas import OpenACCDriverOutput, OpenACCKernelOutput
     from fortranspire.llm import get_llm
     from fortranspire.observability import tracer
@@ -38,7 +55,7 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
 
     # ── 4a : Kernel subroutines ───────────────────────────────────────────────
-    kernel_system = SystemMessage(content=load_prompt("openacc_kernel", version="v2"))
+    kernel_system = SystemMessage(content=load_prompt(kernel_prompt, version="v2"))
 
     updated: List[KernelInfo] = []
     for kernel in state.get("kernel_results", []):
@@ -81,16 +98,20 @@ def openacc_insert_agent(state: Phase1State) -> dict:
             updated.append({**kernel, "openacc_code": annotated})
             continue
 
-        # FD stencil → !$acc parallel loop collapse(2) via LLM
+        # FD stencil → parallel-loop pragma (acc or omp) via LLM
+        pragma_directive = (
+            "!$acc parallel loop collapse(2)" if gpu_pragma == "acc"
+            else "!$omp target teams distribute parallel do collapse(2)"
+        )
         prompt = HumanMessage(content=(
             f"This is a 2D FD stencil subroutine (NOT ELEMENTAL — accesses neighbours).\n"
-            f"Add !$acc parallel loop collapse(2) inside the subroutine body.\n"
+            f"Add `{pragma_directive}` inside the subroutine body.\n"
             f"INTENT(IN):    {[n for n,i in kernel['intent_map'].items() if i=='IN']}\n"
             f"INTENT(INOUT): {[n for n,i in kernel['intent_map'].items() if i=='INOUT']}\n\n"
             f"```fortran\n{src}\n```"
         ))
         try:
-            with tracer.span(node="openacc_kernel", model=model_name) as span:
+            with tracer.span(node=span_kernel, model=model_name) as span:
                 span.annotate(routine=name)
                 cfg = {"callbacks": [token_callback(span)]}
                 try:
@@ -106,7 +127,7 @@ def openacc_insert_agent(state: Phase1State) -> dict:
                 r"^(\s*)(PURE\s+|ELEMENTAL\s+)+(SUBROUTINE\b)",
                 r"\1\3", annotated, flags=re.IGNORECASE | re.MULTILINE,
             )
-            print(f"  🚀 {name} → !$acc parallel loop collapse(2)")
+            print(f"  🚀 {name} → {pragma_directive}")
             updated.append({**kernel, "openacc_code": annotated})
         except Exception as e:
             print(f"  ❌ LLM failed for {name}: {e}")
@@ -121,23 +142,24 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     driver_with_acc = ""
 
     if driver_src:
-        driver_system = SystemMessage(content=load_prompt("openacc_driver", version="v2"))
-        driver_prompt = HumanMessage(content=(
-            f"Add !$acc data region around the time loop.\n"
+        driver_system = SystemMessage(content=load_prompt(driver_prompt, version="v2"))
+        driver_data_pragma = "!$acc data" if gpu_pragma == "acc" else "!$omp target data"
+        driver_prompt_msg = HumanMessage(content=(
+            f"Add a `{driver_data_pragma}` region around the time loop.\n"
             f"Kernel subroutines called inside the loop: {state.get('kernel_names', [])}\n\n"
             f"```fortran\n{driver_src}\n```"
         ))
         try:
-            with tracer.span(node="openacc_driver", model=model_name) as span:
+            with tracer.span(node=span_driver, model=model_name) as span:
                 cfg = {"callbacks": [token_callback(span)]}
                 try:
-                    result = driver_llm.invoke([driver_system, driver_prompt], config=cfg)
+                    result = driver_llm.invoke([driver_system, driver_prompt_msg], config=cfg)
                     driver_with_acc = _strip_markdown(result.annotated_fortran)
                 except Exception:
-                    resp = llm.invoke([driver_system, driver_prompt], config=cfg)
+                    resp = llm.invoke([driver_system, driver_prompt_msg], config=cfg)
                     driver_with_acc = _strip_markdown(resp.content)
             _save(_out("fortran_gpu") / f"driver_gpu{out_ext}", driver_with_acc)
-            print("  driver → !$acc data region inserted")
+            print(f"  driver → {driver_data_pragma} region inserted")
         except Exception as e:
             driver_with_acc = driver_src
             print(f"  LLM failed for driver data region: {e}")
