@@ -7,116 +7,250 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+_(Add upcoming changes here.)_
 
-- **Project renamed** from `coding-agent` / `local-code-agent` to
-  `fortranspire`. Python package, PyPI distribution name, GitHub URLs,
-  docs, and the inline `!> @generated_by` marker were all updated. Use
-  `pip install fortranspire` and `from fortranspire.agent...` going
-  forward.
-- **Loki dependency** repointed from a hard-coded local path
-  (`file://localhost/Users/loicmaurin/PycharmProjects/...`) to a pinned
-  git tag (`git+https://github.com/ecmwf-ifs/loki@0.3.7`). The repo is
-  now actually installable on a fresh machine.
-- **Dependencies split into extras**. The default `uv sync` installs only
-  what `agent-analyze` needs (~50 MB: Loki + NumPy + LangGraph). Pull in
-  `[gpu]` (Phase 1 LLM stack + Cython + fprettify + fortls), `[mcp]`
-  (FastMCP), `[jax]` (Phase 2), or `[all]` as needed.
-- **LLM model selection per pipeline stage.** New env vars
-  `MISTRAL_MODEL_REASONING` (default `mistral-large-latest`, used by
-  `extractor` and `openacc` nodes) and `MISTRAL_MODEL_CODE` (default
-  `codestral-latest`, used by `cython_wrapper`). The legacy
-  `MISTRAL_MODEL` still works as a single fallback. Cuts cost per kernel
-  ~50% on default settings.
+## [0.1.0] — 2026-06-22
+
+First public release on PyPI. The project was renamed from `coding-agent` /
+`local-code-agent` to **fortranspire** and shipped under a single
+`fortranspire <verb>` entry point covering 13 subcommands. The release
+bundles the JOSS submission package, a Sphinx documentation site, and
+Zenodo / `CITATION.cff` / `codemeta.json` metadata for academic
+citation.
+
+The release closed **19 issues** opened during the development sprint
+(#1 → #20), summarised below by theme.
 
 ### Added
 
-- **`agent-analyze`** — standalone Fortran static analyzer (Loki-only,
-  zero LLM calls). 11 rules covering COMMON blocks, SAVE, I/O in
-  kernels, missing IMPLICIT NONE / KIND, POINTER, derived types,
-  loop-carried deps, missing or non-OpenACC Fortran compiler on PATH.
-  Outputs human-readable text, JSON, or SARIF 2.1.0. Includes a GitHub
-  Actions workflow (`.github/workflows/analyze.yml`) that uploads SARIF
-  to Code Scanning, and a lightweight Apptainer recipe
-  (`Apptainer.analyze`) for HPC sites.
-- **`agent-doc`** — LLM-driven documentation generator for legacy
-  Fortran. Inserts idempotent `!>` Doxygen blocks above each routine
-  (short `@brief` for stakeholders + multi-sentence `@details` for
-  developers + `@param` per argument). With `--sphinx` / `--site-only`,
-  also generates a self-contained Sphinx site (Furo + MyST +
-  sphinx-design + sphinx-togglebutton) with a *Show source* dropdown
-  per routine. `--no-llm` mode runs the signature extraction without
-  any token cost.
-- **`agent-format`** — Fortran source formatter wrapping `fprettify`
-  with sensible defaults (lowercase keywords, 2-space indent). Works
-  standalone and is intended to be called as a post-step by the Phase 1
-  pipeline so generated OpenACC + Cython output isn't "flat" Fortran.
-- **`fortranspire.agent.fortls_oracle`** — thin wrapper around the
-  Fortran Language Server (`fortls`) for symbol lookup, neighbour-symbol
-  context, and "does this name exist?" queries. Available for callers
-  but not yet wired into the documenter prompts (deferred — see the
-  follow-up issues).
-- **Compiler detection** in `agent-analyze` — probes PATH for
-  `nvfortran` / `gfortran` / `ifx` / `flang` / `lfortran`, classifies
-  OpenACC capability (`native` / `experimental` / `unsupported`),
-  surfaces the recommended compiler in every output format.
+#### Unified CLI (#8)
+
+- **`fortranspire <verb>`** console script — single entry point with
+  subcommand dispatch (cargo / kubectl / git pattern). 13 subcommands:
+  `analyze`, `doc`, `explain`, `format`, `graph`, `diff`, `report`,
+  `bench`, `gpu`, `port-batch`, `translate`, `profile`, `mcp`.
+- Legacy `agent-analyze`, `agent-doc`, `agent-explain`, `agent-format`,
+  `agent-port-batch`, `agent-gpu`, `agent-translate`, `agent-profile`,
+  `run-mcp` kept for backwards compatibility. Each prints a one-line
+  stderr deprecation notice pointing at the new form. **Removal
+  scheduled for 0.3** (pinned in the message so users can plan).
+
+#### Standalone subcommands — no LLM, CI-friendly
+
+- **`fortranspire analyze`** — Loki-only static analyzer. 11 rules
+  covering COMMON blocks, SAVE, I/O in kernels, missing IMPLICIT NONE
+  / KIND, POINTER, derived types, suspected loop-carried deps, plus a
+  toolchain check (compiler on PATH + OpenACC capability classification
+  for `nvfortran` / `gfortran` / `ifx` / `flang` / `lfortran`). Outputs
+  human-readable text, JSON, or SARIF 2.1.0. Ships a GitHub Actions
+  workflow that uploads SARIF to Code Scanning, plus a lightweight
+  `Apptainer.analyze` recipe for HPC sites.
+- **`fortranspire explain`** (#14) — pre-flight cost + risk estimator.
+  Runs Loki only and sums per-stage token estimates against the price
+  table from #5 to produce a stakeholder-ready Markdown report
+  (`Summary` + per-file breakdown + FORT001-009 risk roll-up). Zero
+  LLM calls, zero tokens.
+- **`fortranspire format`** — Fortran source formatter wrapping
+  `fprettify` with sensible defaults (lowercase keywords, 2-space
+  indent). Works standalone and as a post-step of the Phase 1 pipeline.
+- **`fortranspire graph`** (#15) — module-level call-graph report.
+  One Mermaid `flowchart LR` per file, external callees marked with a
+  dashed border so cross-file edges are obvious. `--narrate` adds a
+  1-paragraph LLM intro per file.
+- **`fortranspire diff`** (#19) — semantic before/after viewer.
+  Classifies each changed line into `[pragma]`, `[purity]`, `[type]`,
+  `[refactor]`, `[common]`, `[save]`, `[other]`. Terminal output with
+  per-category ANSI colors; `--html` writes a self-contained
+  single-file page (no CDN, no JS) suitable for PR review or
+  air-gapped reviewer machines.
+- **`fortranspire report`** (#20) — single-file HTML audit dashboard
+  per kernel. Embeds original source, refactored MODULE, OpenACC
+  driver, Cython wrapper + header, validation log, and equivalence
+  harness from #11; each section collapsible via `<details>` (pure
+  HTML, no JavaScript). Pygments syntax highlighting if installed.
+- **`fortranspire bench`** (#17) — pipeline-output metrics + regression
+  detector. Counts files, routines, pragmas, generated bytes, LLM
+  tokens (from observability traces), gfortran compilation timing.
+  `--compare baseline.json` exits 1 if any metric regresses beyond
+  `--tolerance` (default ±10 %, `--strict` = ±5 %).
+
+#### LLM-driven subcommands
+
+- **`fortranspire doc`** — documentation generator. Idempotent inline
+  Doxygen `!>` blocks above each routine (`@brief` + `@details` +
+  `@param` per argument). With `--sphinx` / `--site-only`, also
+  generates a self-contained Sphinx site (Furo + MyST + sphinx-design
+  + sphinx-togglebutton) with a *Show source* dropdown per routine.
+  `--no-llm` runs Loki signature extraction only.
+- **`fortranspire gpu --gpu-pragma {acc,omp}`** (#18) — Phase 1 port,
+  now supporting two GPU directive families. `acc` (default,
+  backwards-compatible) emits `!$acc parallel loop` / `!$acc data`.
+  `omp` emits `!$omp target teams distribute parallel do` /
+  `!$omp target data` — broader compiler audience (gfortran 13+,
+  nvfortran -mp=gpu, ifx, AMD AOMP, IBM XL).
+- **`fortranspire port-batch`** (#13) — parallel Phase 1 port across
+  many files. Per-file output isolation via `ContextVar` so concurrent
+  workers don't clobber `output/fortran_gpu/`. Default concurrency
+  `min(4, cpu/2)`, configurable via `--concurrency`.
+
+#### Server, observability, security
+
+- **`fortranspire mcp`** — FastMCP server exposing every transformation
+  as an MCP tool over HTTP/SSE.
+- **Telemetry + cost tracking (#5)** — `fortranspire/observability/`
+  package with a JSONL `Tracer`, per-model price table (Mistral La
+  Plateforme rates), and a LangChain `BaseCallbackHandler` that
+  captures token usage even when `with_structured_output()` swallows
+  the raw message. Per-tenant accounting via `FORTRANSPIRE_TENANT_ID`.
+  Optional OpenTelemetry export via `FORTRANSPIRE_OTEL_ENDPOINT`.
+- **MCP server hardening (#10)** — `fortranspire/security/` package
+  with a JSON-file token registry (legacy `API_KEY` env auto-promoted),
+  per-tenant rate limiter (sliding window), HMAC-signed audit log
+  (`FORTRANSPIRE_AUDIT_SECRET`). Backwards-compatible fallback to
+  no-auth when nothing is configured.
+- **Content-addressed LLM cache (#7)** — `fortranspire/cache/` package
+  wiring an SQLite-backed `BaseCache` as LangChain's process-wide LLM
+  cache. Identical re-runs return instantly with **zero token cost**.
+  LRU eviction at configurable byte cap (default 1 GiB,
+  `FORTRANSPIRE_CACHE_MAX_GB`). Disable with `FORTRANSPIRE_CACHE=off`.
+
+#### LLM backend dispatch (#9)
+
+- **Native `mistralai` SDK** auto-selected when the endpoint matches
+  Mistral La Plateforme — gets first-class function calling, JSON
+  mode, streaming, Mistral safety guards. Falls back gracefully to
+  `ChatOpenAI` for self-hosted vLLM / TGI / Ollama / Scaleway / OVH.
+  Override via `FORTRANSPIRE_LLM_BACKEND={mistral,openai}`.
+
+#### Equivalence harness (#11)
+
+- **Auto-generated CPU↔GPU test file** per ported kernel
+  (`output/tests/test_<kernel>_equivalence.py`). Loads f2py-wrapped
+  CPU reference and Cython-wrapped GPU port, runs random inputs,
+  asserts `np.testing.assert_allclose` on every INTENT(OUT|INOUT).
+  Skips cleanly when either build is missing. Tolerances configurable
+  via `FORTRANSPIRE_TOLERANCE_ATOL/RTOL`.
+
+#### Prompts, schemas, i18n
+
+- **Externalized prompts (#3)** — every system prompt moved out of
+  Python source into `fortranspire/prompts/<name>/<lang>/<version>.md`.
+  Loader `load_prompt(name, version=, lang=, **vars)` with versioning
+  (so prompt evolution is auditable), locale fallback (FR → EN), and
+  per-deployment override via `FORTRANSPIRE_PROMPTS_DIR`. LRU-cached
+  file reads.
+- **French translations (#16)** — 11 new FR prompt variants covering
+  all 6 LLM-emitting stages. Activate with `FORTRANSPIRE_LANG=fr` or
+  `load_prompt(..., lang="fr")`. Initial audience (Météo-France, CEA,
+  EDF R&D, ENM Toulouse) is francophone; Mistral handles French
+  exceptionally well at zero quality cost.
+- **Pydantic structured outputs (#4)** — every LLM-emitting stage now
+  returns a typed Pydantic object via
+  `llm.with_structured_output(SchemaModel)` instead of regex-parsing
+  free-form text. Schemas: `ExtractorOutput`, `OpenACCKernelOutput`,
+  `OpenACCDriverOutput`, `CythonPyxOutput`, `CythonHeaderOutput`,
+  `DocRoutineOutput`. v2 prompts emit JSON; v1 kept as legacy fallback
+  for backends without JSON-schema mode (triple fallback in the
+  extractor for robustness).
+- **`fortls` oracle (#12)** — the Fortran Language Server is now wired
+  into the documenter prompts. Neighbouring-symbol context fetched per
+  routine reduces hallucinations on names/relationships. Graceful
+  no-op when `fortls` is missing.
+
+#### Architecture refactors
+
+- **LangGraph nodes split (#2)** — `translation_graph_phase1.py`
+  (~1400 lines) decomposed into per-node modules under
+  `fortranspire/agent/nodes/` (`init`, `parser`, `extractor`,
+  `pure_elemental`, `openacc`, `cython_wrapper`, `equivalence_harness`,
+  `validation`). The main file is now ~80 lines of graph wiring.
+  Public surface preserved via re-exports for backwards compat.
+
+#### Documentation & publishing
+
+- **JOSS submission package** — `CONTRIBUTING.md`, `SECURITY.md`,
+  `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `paper.md`,
+  `paper.bib`, `.zenodo.json` (DOI metadata, ORCID
+  `0009-0004-8117-4850`, affiliation ENM Toulouse),
+  `.readthedocs.yaml`, and `.github/workflows/draft-paper.yml` to
+  render the JOSS draft PDF on every push.
+- **`CITATION.cff` + `codemeta.json`** at the repo root — GitHub
+  surfaces the "Cite this repository" button; `codemeta.json` is the
+  semantic-web companion consumed by Zenodo, Software Heritage, and
+  academic search engines.
+- **Sphinx documentation site** under `docs/` (Furo + MyST +
+  extensions), with sections for installation, quickstart,
+  configuration, pipeline architecture, Fortran patterns, LLM
+  endpoints, Mistral integration, Le Chat connector preparation, and
+  the standalone documentation feature.
 - **Mistral integration documentation** —
-  `docs/concepts/mistral-integration.md` covers the four integration
-  paths (LLM consumer, per-stage models, MCP provider, Le Chat connector
-  directory). Connector manifest prepared in
+  `docs/concepts/mistral-integration.md` covers four integration
+  paths (LLM consumer, per-stage models, MCP provider, Le Chat
+  connector directory). Connector manifest prepared in
   `integration/le-chat-connector.json` and documented in
   `docs/concepts/le-chat-connector.md`. Runnable smoke test at
   `examples/mistral_agents_api_smoke_test.py`.
-- **JOSS submission package** — `CONTRIBUTING.md`, `SECURITY.md`,
-  `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `paper.md`,
-  `paper.bib`, `.zenodo.json` (Zenodo DOI metadata, ORCID
-  `0009-0004-8117-4850`, affiliation ENM Toulouse), `.readthedocs.yaml`,
-  and `.github/workflows/draft-paper.yml` to render the JOSS draft PDF
-  on every push.
-- **`CITATION.cff` + `codemeta.json`** at the repo root — GitHub picks
-  up `CITATION.cff` for the "Cite this repository" button; `codemeta.json`
-  is the semantic-web companion consumed by Zenodo, Software Heritage,
-  and academic search engines. Both contain the same author/affiliation
-  block as `.zenodo.json` and `paper.md`.
-- **Sphinx documentation site** under `docs/` (Furo + MyST + extensions),
-  with sections for installation, quickstart, configuration, pipeline
-  architecture, Fortran patterns, LLM endpoints, Mistral integration,
-  Le Chat connector, and the standalone documentation feature.
+
+### Changed
+
+- **Project renamed** from `coding-agent` / `local-code-agent` to
+  **fortranspire**. Python package directory, PyPI distribution name,
+  GitHub URLs, docs, CI workflows, and the inline
+  `!> @generated_by` marker were all updated. Use
+  `pip install fortranspire` and `from fortranspire.agent...`.
+- **Loki dependency** repointed from a hard-coded local path
+  (`file://localhost/Users/loicmaurin/PycharmProjects/...`) to a
+  pinned git tag (`git+https://github.com/ecmwf-ifs/loki@0.3.7`). The
+  repo is now installable on any fresh machine.
+- **Dependencies split into extras**: default `uv sync` installs
+  ~50 MB (Loki + NumPy + LangGraph + python-dotenv) — enough for
+  `analyze`, `explain`, `format` (`--no-llm`), `graph`, `diff`,
+  `report`, `bench`. Pull `[gpu]` for the LLM stack + Cython +
+  fprettify + fortls, `[mcp]` for the FastMCP server, `[jax]` for
+  Phase 2, or `[all]`.
+- **LLM model selection per pipeline stage** — `MISTRAL_MODEL_REASONING`
+  (default `mistral-large-latest`, used by `extractor` and `openacc`)
+  and `MISTRAL_MODEL_CODE` (default `codestral-latest`, used by
+  `cython_wrapper`). Legacy `MISTRAL_MODEL` still works as a single
+  fallback. Cuts cost per kernel ~50 % on default settings.
+- **Pipeline node order** — the equivalence-harness node from #11 is
+  inserted between `cython_wrapper` and `validation`, generating the
+  test harness file before the final validation step.
 
 ### Fixed
 
-- **Parser missed module-contained routines.** `parser_phase1` only
+- **Parser missed module-contained routines** — `parser_phase1` only
   looked at `source.routines` (top-level), which is empty for modern
-  Fortran 90 codes that wrap subroutines in `module ... contains ... end
-  module`. Now walks `source.modules[].subroutines` too — Loki
-  reports the same count, the LLM pipeline sees real routines instead of
-  failing with "Loki found no routines in this file".
-- **Off-by-one in `agent-doc` line numbers** due to `\s` matching `\n`
-  in the routine-declaration regex; same bug caused the indent
-  detection to capture a newline as whitespace. Switched to `[ \t]*`
-  where appropriate, so generated docstring blocks now land above the
-  right line and inherit the routine's indent correctly.
+  Fortran 90 codes that wrap subroutines in
+  `module ... contains ... end module`. Now also walks
+  `source.modules[].subroutines`.
+- **Off-by-one in `agent-doc` line numbers** — `\s` in the routine
+  declaration regex was matching `\n`, letting the match start on the
+  preceding blank line. Same bug caused the indent capture to take a
+  newline as whitespace. Switched to `[ \t]*` so docstring blocks
+  land above the right line with the routine's own indent.
 - **LangChain imports** in `translation_graph_phase1.py` were
-  unconditionally loaded at module import, forcing `agent-analyze`
-  (analyze-only) to depend on the full LLM stack. Moved into the three
-  agent functions that actually call the LLM so `uv sync` (no extras)
-  is enough to run analysis.
+  unconditionally loaded at module import — forcing `agent-analyze`
+  and friends to require `[gpu]`. Now lazy inside the three
+  LLM-using node functions, so `uv sync` (core only) suffices for
+  every no-LLM command.
+- **`agent-port-batch --help`** crashed on the core-only install for
+  the same reason. Same lazy-import fix applies in
+  `fortranspire/agent/cli.py`.
+- **Cache `langchain.globals` import path** — modern langchain moved
+  `set_llm_cache` to `langchain_core.globals`; the install hook
+  follows the new location.
 
-## [0.1.0] — 2026-06-17
+## [0.0.x] — pre-rename snapshot (2026-06-17)
 
-### Added
-
-- First public release. MCP server (`run-mcp`) exposing
-  `translate_kernel_gpu`, `translate_kernel`, `profile_kernels`, and
-  `ask_agent`.
-- CLI: `agent-gpu`, `agent-translate`, `agent-profile`, `agent-pipeline`.
-- Phase 1 LangGraph pipeline (Fortran → OpenACC GPU + Cython wrapper).
-- Phase 2 LangGraph pipeline (Fortran → JAX, experimental).
-- Loki-based deterministic Fortran AST analysis.
-- Docker / docker-compose / Apptainer recipes; Azure Terraform deployment
-  template.
-- Pivoted to a sovereign Mistral endpoint (no Azure dependency on the LLM
-  side).
+The pre-rename project was published informally as `coding-agent`. It
+shipped the initial MCP server (`run-mcp`), the legacy CLI
+(`agent-gpu`, `agent-translate`, `agent-profile`, `agent-pipeline`),
+the original Phase 1 and Phase 2 LangGraph pipelines, Loki-based
+deterministic Fortran AST analysis, Docker / docker-compose / Apptainer
+recipes, and the pivot from Azure to a sovereign Mistral endpoint
+(commit `ccfe221`). All of that is preserved under fortranspire 0.1.0.
 
 [Unreleased]: https://github.com/maurinl26/fortranspire/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/maurinl26/fortranspire/releases/tag/v0.1.0
+[0.1.0]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.0
+[0.0.x]:      https://github.com/maurinl26/fortranspire/commits/v0.1.0/
