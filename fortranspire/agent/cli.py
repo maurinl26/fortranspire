@@ -97,9 +97,9 @@ def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
     if not passed:
         print(f"    🔧 Check output/fortran_gpu/validation.log for errors")
         print(f"    📋 gfortran -O2 -fsyntax-only output/fortran_gpu/module_kernels_gpu.f90")
-    print(f"    🖥️  GPU : AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh")
-    print(f"    📊 Bench: AZURE_GPU_HOST=<ip> bash scripts/bench_gpu.sh {filepath}")
-    print(f"    🐍 Cython: cd output && python setup.py build_ext --inplace")
+    print(f"    🖥️  GPU compile: rsync -a output/ user@<gpu-node>:~/k/ && ssh user@<gpu-node> 'cd ~/k && bash compile_gpu.sh'")
+    print(f"    📊 Bench       : fortranspire bench output/")
+    print(f"    🐍 Cython      : cd output && python setup.py build_ext --inplace")
     print(f"{'═' * 60}\n")
 
     if final_state.get("validation_log"):
@@ -218,7 +218,8 @@ def _translate_gpu_main():
             "After the pipeline:\n"
             "  # Syntax check (no GPU needed)\n"
             "  gfortran -O2 -fsyntax-only output/fortran_gpu/module_kernels_gpu.f90\n\n"
-            "  # GPU compile + benchmark — see scripts/test_gpu.sh, scripts/bench_gpu.sh\n"
+            "  # GPU compile: copy output/ to a GPU node and run `bash compile_gpu.sh`\n"
+            "  # Benchmark    : `fortranspire bench output/` (regression detector)\n"
         ),
     )
     parser.add_argument("args", nargs="+", help="[translate] <filepath.f90>")

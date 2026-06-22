@@ -20,9 +20,10 @@ Two backends, selected automatically (override via ``FORTRANSPIRE_LLM_BACKEND``)
 The legacy ``MISTRAL_MODEL`` env var still works as a single override for
 both roles, so existing ``.env`` files keep working unchanged.
 
-No Azure dependency: the agent talks directly to the endpoint of your
-choice — La Plateforme, a self-hosted vLLM/TGI/Ollama server, or a
-sovereign-EU gateway.
+No hyperscaler dependency: the agent talks directly to the endpoint of
+your choice — Mistral La Plateforme, a self-hosted vLLM/TGI/Ollama
+server, or a sovereign-EU gateway (Scaleway Generative APIs, OVHcloud
+AI Endpoints, Outscale).
 """
 from __future__ import annotations
 
