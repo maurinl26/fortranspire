@@ -14,49 +14,72 @@
   self-hosted vLLM / TGI / Ollama server. See
   [LLM endpoints](../concepts/llm-endpoints).
 
-## From source (recommended)
+## From PyPI
+
+```bash
+pip install fortranspire                                              # core
+pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"     # AST (see below)
+pip install "fortranspire[gpu]"                                       # Phase 1 transforms
+```
+
+### Why is Loki a separate command?
+
+ECMWF Loki is not published on PyPI under that name (the PyPI `loki` is an
+unrelated astronomy package), and [PEP 715] forbids direct URL dependencies
+(`git+https://…`) inside published metadata. We therefore ship fortranspire
+with **no Loki dependency declared** and ask users to install it in a
+second step. The parser falls back to a regex frontend when Loki is absent,
+so the package imports cleanly — but `analyze` is significantly more
+accurate with Loki present.
+
+[PEP 715]: https://peps.python.org/pep-0715/
+
+## From source (recommended for development)
 
 ```bash
 git clone https://github.com/maurinl26/fortranspire
 cd fortranspire
 cp .env.example .env       # fill in MISTRAL_ENDPOINT / MISTRAL_API_KEY
-uv sync
+uv sync --group loki       # core + Loki (resolved via [tool.uv.sources])
 ```
 
-The `uv sync` step installs all runtime dependencies into a project-local
-virtual environment (`.venv/`). Activate it with `source .venv/bin/activate`
-or prefix commands with `uv run`.
+The `--group loki` flag activates the PEP 735 dependency group declared in
+`pyproject.toml`; uv resolves it transparently to the pinned git tag
+(`0.3.7`). Dependency groups are not part of the published PyPI metadata,
+so they do not violate PEP 715.
+
+Activate the venv with `source .venv/bin/activate` or prefix commands with
+`uv run`.
 
 ## Optional extras
 
-The default `uv sync` installs only the **core** dependencies (Loki +
-NumPy + LangGraph + python-dotenv, ~50 MB). That is enough to run
-`agent-analyze` — the analyze-only mode. Pull in extras for the other
-agents:
+The default install (`uv sync --group loki`) gives you the **core** plus
+the Loki AST toolkit (~50 MB). That is enough to run `fortranspire
+analyze` — the analyze-only mode. Pull in extras for the other agents:
 
 | Extra      | What it adds                                                | When to use                                  |
 | ---------- | ----------------------------------------------------------- | -------------------------------------------- |
-| *(none)*   | core: Loki, NumPy, python-dotenv, LangGraph                 | `agent-analyze` (CI / pre-flight)            |
-| `cpu`      | alias for "no extras" — discoverable for CI scripts         | Same as above, explicit for `uv sync --extra cpu` |
-| `gpu`      | LangChain stack + Cython                                    | `agent-gpu` (Fortran → GPU + Cython, Phase 1)|
+| *(none)*   | core: NumPy, python-dotenv, LangGraph                       | imports + parser regex fallback              |
+| `cpu`      | alias for "no extras" — discoverable for CI scripts         | Same as above, explicit                      |
+| `gpu`      | LangChain stack + Cython                                    | `fortranspire gpu` (Phase 1)                 |
 | `mcp`      | FastMCP + `[gpu]`                                           | `run-mcp` (HTTP/SSE server in IDEs / CI)     |
-| `jax`      | JAX, Flax, Equinox                                          | `agent-translate` / `agent-pipeline --to jax`|
+| `jax`      | JAX, Flax, Equinox                                          | `fortranspire translate` / Phase 2           |
 | `all`      | `[gpu]` + `[mcp]` + `[jax]`                                 | Full developer install                       |
 | `docs`     | Sphinx + Furo + MyST + extensions                           | Build this documentation site                |
 | `tests`    | pytest, pytest-cov                                          | Run the test suite                           |
 
 ```bash
-# Analyze-only (smallest footprint — CI / pre-commit)
-uv sync                       # or: uv sync --extra cpu
+# Analyze-only (CI / pre-commit)
+uv sync --group loki                              # core + Loki AST
 
 # Full transformation pipeline (Phase 1 + Phase 2)
-uv sync --extra all
+uv sync --group loki --extra all
 
 # Anything in between
-uv sync --extra gpu           # Phase 1 only — no MCP, no JAX
-uv sync --extra mcp           # MCP server (pulls [gpu])
-uv sync --extra jax           # Phase 2 only
-uv sync --extra docs --extra tests
+uv sync --group loki --extra gpu                  # Phase 1 only
+uv sync --group loki --extra mcp                  # MCP server (pulls [gpu])
+uv sync --group loki --extra jax                  # Phase 2 only
+uv sync --extra docs --extra tests                # docs + tests, no Loki needed
 ```
 
 ## Compiler detection

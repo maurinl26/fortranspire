@@ -171,18 +171,38 @@ la compréhension sémantique est indispensable (extraction de kernels, généra
 
 ### Installation
 
+#### Depuis PyPI
+
 ```bash
-git clone <repo>
+pip install fortranspire                                             # core
+pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"    # AST Fortran (voir note)
+pip install "fortranspire[gpu]"                                      # Phase 1 (LangChain + Cython)
+```
+
+> **À propos de Loki** — ECMWF Loki n'est pas publié sur PyPI (le nom `loki`
+> y est pris par un package d'astronomie sans rapport), et PEP 715 interdit
+> les dépendances `git+https://…` dans les métadonnées publiées. Loki doit
+> donc s'installer en une commande séparée. Le parser de fortranspire
+> retombe automatiquement sur un frontend regex si Loki est absent, mais
+> `analyze` est plus précis avec Loki.
+
+#### Depuis les sources (recommandé pour développer)
+
+```bash
+git clone https://github.com/maurinl26/fortranspire
 cd fortranspire
 cp .env.example .env
 
 # Choisir le profil d'installation selon l'usage :
-uv sync                       # core : analyze-only (~50 MB), pas de LLM
-uv sync --extra gpu           # Phase 1 : portage Fortran→GPU + Cython
-uv sync --extra mcp           # serveur MCP (HTTP/SSE) — inclut [gpu]
-uv sync --extra jax           # Phase 2 : Fortran → JAX
-uv sync --extra all           # tout (Phase 1 + Phase 2 + MCP)
+uv sync --group loki                          # core + Loki (AST) — analyze
+uv sync --group loki --extra gpu              # Phase 1 : Fortran → GPU + Cython
+uv sync --group loki --extra mcp              # serveur MCP (HTTP/SSE)
+uv sync --group loki --extra jax              # Phase 2 : Fortran → JAX
+uv sync --group loki --extra all              # tout (Phase 1 + Phase 2 + MCP)
 ```
+
+Le groupe `loki` (PEP 735) est résolu localement par uv depuis le git tag
+`0.3.7` — il ne fait pas partie des métadonnées publiées sur PyPI.
 
 ### Connecter un endpoint Mistral (souverain)
 

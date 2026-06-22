@@ -1,6 +1,6 @@
 [project]
 name = "fortranspire"
-version = "0.1.1"
+version = "0.1.2"
 description = "A 100% Private MCP Coding Assistant and Scientific Porting Pipeline"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -37,15 +37,16 @@ classifiers = [
     "Topic :: Software Development :: Compilers",
 ]
 # ── Core dependencies ──────────────────────────────────────────────────────
-# Minimal footprint required by `agent-analyze` (Loki AST, no LLM, no GPU).
+# Minimal footprint required by `fortranspire analyze` (no LLM, no GPU).
+# ECMWF Loki is NOT declared here — PyPI rejects direct git-URL dependencies
+# (PEP 715), and Loki is not on PyPI under that name (the PyPI `loki` is an
+# unrelated astronomy package). Install it manually in a second step:
+#     pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"
+# The parser falls back to a regex frontend when Loki is missing, so the
+# package imports cleanly without it — but `analyze` is best with Loki.
 # Everything else lives behind an optional extra; pick the ones that match
 # what you actually run. See `[project.optional-dependencies]` below.
 dependencies = [
-    # ECMWF Loki — Fortran source-to-source transformation framework.
-    # Not on PyPI (the PyPI `loki` is an unrelated astronomy package), so we
-    # pin to a git tag. Override locally with a `[tool.uv.sources]` entry if
-    # you need to develop against a fork (see `loki-source` below).
-    "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7",
     "numpy",
     "python-dotenv>=1.0",
     "langgraph>=0.2.0",   # imported at module-load by parser_phase1; ~5 MB
@@ -155,8 +156,16 @@ agent-pipeline  = "fortranspire.agent.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[tool.hatch.metadata]
-allow-direct-references = true
-
 [tool.uv]
 override-dependencies = ["pydantic>=2.11.7"]
+
+# Dependency groups (PEP 735) — not part of the published PyPI metadata,
+# only used by `uv sync --group loki`. This is how local developers pull
+# in Loki without violating PEP 715 (which forbids direct URL deps in
+# Requires-Dist). End users install Loki manually:
+#     pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"
+[dependency-groups]
+loki = ["loki"]
+
+[tool.uv.sources]
+loki = { git = "https://github.com/ecmwf-ifs/loki", tag = "0.3.7" }

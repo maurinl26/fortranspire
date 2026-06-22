@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(Add upcoming changes here.)_
 
+## [0.1.2] — 2026-06-22
+
+Patch release. Unblocks the first PyPI upload by removing the direct
+git-URL dependency on ECMWF Loki, which PEP 715 forbids in published
+metadata.
+
+### Changed
+
+- **ECMWF Loki is no longer a declared dependency.** PyPI rejected the
+  v0.1.0 / v0.1.1 wheels with `400 Can't have direct dependency: loki @
+  git+https://github.com/ecmwf-ifs/loki@0.3.7`. Loki is not on PyPI
+  under that name (the PyPI `loki` is an unrelated astronomy package),
+  and PEP 715 disallows `git+https://…` URLs in `Requires-Dist`.
+  fortranspire now ships with no Loki entry; users install it in a
+  second step:
+  ```bash
+  pip install fortranspire
+  pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"
+  ```
+  The parser already falls back to a regex frontend when Loki is
+  absent, so the package imports and runs without it — `analyze` is
+  simply more accurate when Loki is available.
+- **Local development uses a PEP 735 dependency group.** A new
+  `[dependency-groups]` block declares `loki = ["loki"]` and
+  `[tool.uv.sources]` pins it to the git tag. Developers run
+  `uv sync --group loki` to pull Loki in for local work; this metadata
+  is not published to PyPI.
+- **`[tool.hatch.metadata] allow-direct-references = true` removed.**
+  No longer required now that no direct URL dep remains.
+
+### Documentation
+
+- README + `docs/getting-started/installation.md` rewritten with the
+  new two-step install path and an explanatory callout on why Loki is
+  separate.
+
 ## [0.1.1] — 2026-06-22
 
 Patch release. Fixes two cosmetic issues found by the post-tag smoke
