@@ -43,6 +43,14 @@ concepts/legacy-documentation
 
 ```{toctree}
 :maxdepth: 2
+:caption: Integrations
+
+integrations/claude-code
+integrations/mistral-vibe
+```
+
+```{toctree}
+:maxdepth: 2
 :caption: Reference
 
 api/index
