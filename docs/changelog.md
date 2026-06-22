@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(Add upcoming changes here.)_
 
+## [0.1.1] — 2026-06-22
+
+Patch release. Fixes two cosmetic issues found by the post-tag smoke
+test of the v0.1.0 wheel.
+
+### Fixed
+
+- **Unified `fortranspire <verb>` CLI no longer prints the legacy
+  `agent-*` deprecation notice** when dispatching to `gpu`,
+  `translate`, or `profile`. Root cause: the dispatch table pointed
+  at `run_*` wrappers that include the deprecation message. Split
+  each into an internal `_*_main()` function (called by the unified
+  CLI, no deprecation) and a legacy `run_*` wrapper (called by the
+  `agent-*` scripts, prints the notice). The other 10 subcommands
+  were already wired this way.
+- **Package docstring** in ``fortranspire/__init__.py`` was a relic
+  from the pre-rename project (referenced "Local Code Agent —
+  LangChain + Mistral NeMo 12B via Ollama"). Replaced with the
+  current project description and added ``__version__ = "0.1.1"``.
+
 ## [0.1.0] — 2026-06-22
 
 First public release on PyPI. The project was renamed from `coding-agent` /
@@ -251,6 +271,7 @@ deterministic Fortran AST analysis, Docker / docker-compose / Apptainer
 recipes, and the pivot from Azure to a sovereign Mistral endpoint
 (commit `ccfe221`). All of that is preserved under fortranspire 0.1.0.
 
-[Unreleased]: https://github.com/maurinl26/fortranspire/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/maurinl26/fortranspire/compare/v0.1.1...HEAD
+[0.1.1]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.1
 [0.1.0]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.0
 [0.0.x]:      https://github.com/maurinl26/fortranspire/commits/v0.1.0/

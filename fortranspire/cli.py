@@ -40,9 +40,13 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "diff":       ("fortranspire.agent.diff",     "main"),
     "report":     ("fortranspire.agent.report",   "main"),
     "bench":      ("fortranspire.agent.bench",    "main"),
-    "gpu":        ("fortranspire.agent.cli",      "run_translate_gpu"),
-    "translate":  ("fortranspire.agent.cli",      "run_translate"),
-    "profile":    ("fortranspire.agent.cli",      "run_profile"),
+    # gpu / translate / profile dispatch to the *internal* entry points
+    # (`_*_main`) so the unified CLI does NOT print the legacy `agent-*`
+    # deprecation notice. The `run_*` wrappers still exist for the legacy
+    # console scripts and print the deprecation there.
+    "gpu":        ("fortranspire.agent.cli",      "_translate_gpu_main"),
+    "translate":  ("fortranspire.agent.cli",      "_translate_main"),
+    "profile":    ("fortranspire.agent.cli",      "_profile_main"),
     "mcp":        ("fortranspire.server",         "main"),
 }
 

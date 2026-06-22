@@ -167,15 +167,23 @@ def run_port_batch():
     sys.exit(_batch_main())
 
 
-def run_translate():
-    """agent-translate — Phase 2 : Fortran → JAX"""
-    _deprecation_notice("agent-translate", "fortranspire translate")
+# ── Phase 2 / Phase 1 / Profile — pure entry points ──────────────────────
+# Each `_*_main` holds the actual logic and is called by both:
+#   - the unified `fortranspire <verb>` dispatcher (no deprecation noise), and
+#   - the legacy `run_*` wrapper (prints the one-line deprecation notice).
+# The split fixes a bug where calling `fortranspire gpu/translate/profile`
+# through the unified CLI was triggering the deprecation message intended
+# only for the legacy `agent-*` aliases.
+
+
+def _translate_main():
+    """Phase 2 — Fortran → JAX (shared by unified + legacy entries)."""
     parser = argparse.ArgumentParser(
         description="🔬 Fortran → JAX Translation (Phase 2 — experimental)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Example:\n"
-            "  uv run agent-translate /path/to/kernel.f90\n"
+            "  fortranspire translate /path/to/kernel.f90\n"
         ),
     )
     parser.add_argument("filepath", help="Path to the .f90 Fortran file")
@@ -183,14 +191,14 @@ def run_translate():
     translate_file(args.filepath)
 
 
-def run_translate_gpu():
-    """agent-gpu — Phase 1 : Fortran → Fortran GPU + Cython
+def run_translate():
+    """agent-translate — Phase 2 : Fortran → JAX (legacy alias)."""
+    _deprecation_notice("agent-translate", "fortranspire translate")
+    _translate_main()
 
-    Accepts both:
-      uv run agent-gpu /path/to/kernel.f90
-      uv run agent-gpu translate /path/to/kernel.f90
-    """
-    _deprecation_notice("agent-gpu", "fortranspire gpu")
+
+def _translate_gpu_main():
+    """Phase 1 — Fortran → GPU + Cython (shared by unified + legacy entries)."""
     parser = argparse.ArgumentParser(
         description=(
             "🚀 Fortran → Fortran GPU + Cython (Phase 1)\n\n"
@@ -205,43 +213,51 @@ def run_translate_gpu():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  uv run agent-gpu /path/to/seismic_CPML_2D.f90\n"
-            "  uv run agent-gpu translate /path/to/kernel.f90\n\n"
+            "  fortranspire gpu /path/to/seismic_CPML_2D.f90\n"
+            "  fortranspire gpu --gpu-pragma omp /path/to/kernel.f90\n\n"
             "After the pipeline:\n"
             "  # Syntax check (no GPU needed)\n"
             "  gfortran -O2 -fsyntax-only output/fortran_gpu/module_kernels_gpu.f90\n\n"
-            "  # Deploy and compile on GPU node\n"
-            "  AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh\n\n"
-            "  # CPU vs GPU speedup benchmark\n"
-            "  AZURE_GPU_HOST=<ip> bash scripts/bench_gpu.sh /path/to/original.f90\n"
+            "  # GPU compile + benchmark — see scripts/test_gpu.sh, scripts/bench_gpu.sh\n"
         ),
     )
     parser.add_argument("args", nargs="+", help="[translate] <filepath.f90>")
     parser.add_argument("--gpu-pragma", choices=("acc", "omp"), default="acc",
                         help="GPU directive family (default: acc). "
-                             "'omp' = OpenMP target offload (issue #18)")
+                             "'omp' = OpenMP target offload")
     parsed = parser.parse_args()
-    # Strip optional subcommand for parity with agent-pipeline syntax
+    # Strip optional subcommand for parity with legacy agent-pipeline syntax
     parts = [p for p in parsed.args if p not in {"translate", "profile"}]
     if not parts:
         parser.error("❌ filepath is required")
     translate_file_gpu(parts[0], gpu_pragma=parsed.gpu_pragma)
 
 
-def run_profile():
-    """agent-profile — Performance benchmarking"""
-    _deprecation_notice("agent-profile", "fortranspire profile")
+def run_translate_gpu():
+    """agent-gpu — Phase 1 : Fortran → Fortran GPU + Cython (legacy alias)."""
+    _deprecation_notice("agent-gpu", "fortranspire gpu")
+    _translate_gpu_main()
+
+
+def _profile_main():
+    """Performance benchmarking (shared by unified + legacy entries)."""
     parser = argparse.ArgumentParser(
         description="📊 Fortran Performance Profile Agent",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Example:\n"
-            "  uv run agent-profile /path/to/kernel.f90\n"
+            "  fortranspire profile /path/to/kernel.f90\n"
         ),
     )
     parser.add_argument("filepath", help="Path to the .f90 Fortran file")
     args = parser.parse_args()
     profile_file(args.filepath)
+
+
+def run_profile():
+    """agent-profile — Performance benchmarking (legacy alias)."""
+    _deprecation_notice("agent-profile", "fortranspire profile")
+    _profile_main()
 
 
 def main():

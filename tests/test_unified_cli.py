@@ -122,3 +122,24 @@ def test_unified_dispatch_does_not_print_deprecation(
     main(["analyze", "--no-toolchain-check", str(tmp_path)])
     err = capsys.readouterr().err
     assert "deprecated" not in err
+
+
+# Regression guard for #0.1.1: the unified CLI used to dispatch
+# `gpu`/`translate`/`profile` through the legacy `run_*` wrappers,
+# which always print the `agent-*` deprecation notice. The 0.1.1 fix
+# splits each into a `_*_main()` shared entry; the dispatch table now
+# points at those. This test would fail against 0.1.0 wheel output.
+
+@pytest.mark.parametrize("cmd", ["gpu", "translate", "profile"])
+def test_unified_dispatch_silent_on_legacy_shaped_commands(
+    cmd: str, capsys: pytest.CaptureFixture[str],
+):
+    """`fortranspire gpu/translate/profile --help` must NOT show the
+    `agent-*` deprecation notice — that's reserved for the legacy
+    console scripts."""
+    main([cmd, "--help"])
+    err = capsys.readouterr().err
+    assert "deprecated" not in err.lower(), (
+        f"`fortranspire {cmd}` should not show the legacy "
+        f"`agent-{cmd}` deprecation message"
+    )
