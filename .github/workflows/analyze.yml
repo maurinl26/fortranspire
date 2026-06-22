@@ -62,18 +62,27 @@ jobs:
             echo "targets=${{ github.event.inputs.target_path }}" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          # Equivalence-harness fixtures (tests/fixtures/equivalence/) are
+          # **test drivers** — they intentionally have I/O (write probe
+          # values to stdout for pytest to parse). The analyzer correctly
+          # flags them as FORT001 (I/O in kernel candidate), so we
+          # exclude them from the CI gate. They are still exercised by
+          # `pytest -m slow` (issue #45).
+          EXCLUDE_PATTERN='^tests/fixtures/equivalence/'
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
             changed=$(git diff --name-only --diff-filter=ACMR \
               "origin/${{ github.base_ref }}...HEAD" \
-              | grep -E '\.(f90|F90)$' || true)
+              | grep -E '\.(f90|F90)$' \
+              | grep -Ev "$EXCLUDE_PATTERN" || true)
           else
             changed=$(git diff --name-only --diff-filter=ACMR HEAD~1 HEAD \
-              | grep -E '\.(f90|F90)$' || true)
+              | grep -E '\.(f90|F90)$' \
+              | grep -Ev "$EXCLUDE_PATTERN" || true)
           fi
           if [ -z "$changed" ]; then
-            echo "No Fortran files changed — analyzer will scan the whole repo."
-            echo "targets=." >> "$GITHUB_OUTPUT"
+            echo "No Fortran files to analyze (or all changed files are excluded fixtures)."
+            echo "targets=" >> "$GITHUB_OUTPUT"
           else
             echo "Changed Fortran files:"
             echo "$changed"
@@ -83,12 +92,14 @@ jobs:
           fi
 
       - name: Run analyzer (text — console)
+        if: steps.paths.outputs.targets != ''
         continue-on-error: true
         run: |
           # shellcheck disable=SC2086
           uv run agent-analyze --no-color ${{ steps.paths.outputs.targets }}
 
       - name: Run analyzer (SARIF — for Code Scanning)
+        if: steps.paths.outputs.targets != ''
         run: |
           # shellcheck disable=SC2086
           uv run agent-analyze \
@@ -98,14 +109,14 @@ jobs:
             ${{ steps.paths.outputs.targets }}
 
       - name: Upload SARIF to GitHub Code Scanning
-        if: always()
+        if: always() && steps.paths.outputs.targets != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: fortranspire.sarif
           category: fortranspire
 
       - name: Upload SARIF as build artifact
-        if: always()
+        if: always() && steps.paths.outputs.targets != ''
         uses: actions/upload-artifact@v4
         with:
           name: fortranspire-sarif

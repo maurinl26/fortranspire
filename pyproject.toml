@@ -171,5 +171,12 @@ exclude = [
 [tool.hatch.build.targets.wheel]
 packages = ["fortranspire"]
 
+[tool.pytest.ini_options]
+# Custom markers — registering them silences "PytestUnknownMarkWarning"
+# and lets users opt into / out of expensive checks (issue #45).
+markers = [
+    "slow: shells out to a Fortran compiler / runs a binary — opt-in via `pytest -m slow`",
+]
+
 [tool.uv]
 override-dependencies = ["pydantic>=2.11.7"]
