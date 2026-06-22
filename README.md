@@ -1103,62 +1103,22 @@ nsys profile ./kernel_gpu < input.dat  # profiling NVIDIA NSight Systems
 
 ---
 
-## 10. 🗺️ Roadmap & Scopes futurs
+## 10. 🗺️ Roadmap
 
-| Phase | Statut | Description |
-|-------|--------|-------------|
-| ✅ **Phase 1** | En cours | Fortran → Fortran GPU (OpenACC) + wrapper Cython |
-| 🔬 **Phase 2** | Planifié | Fortran GPU → JAX (jit, vmap, lax.scan) |
-| 🌐 **Phase 3** | Futur | GHEX — communications GPU-to-GPU |
-| 📡 **Phase 4** | Futur | I/O moderne xarray / zarr |
-| 🤖 **Phase 5** | Futur | Surrogates FNO (Fourier Neural Operators) |
+La roadmap stratégique, les phases techniques et les surfaces de déploiement
+sont maintenues dans [**ROADMAP.md**](ROADMAP.md). Vue rapide :
 
-### Phase 3 — GHEX (GPU-to-GPU communications)
+| Phase | Cible | Statut |
+|-------|-------|--------|
+| 1 — OpenACC + Cython | Fortran → GPU + wrapper Python | **Shipped (0.1.0)** |
+| 1.5 — OpenMP target | Pragma multi-vendor (gfortran 13+, nvfortran, ifx) | Shipped (0.1.0) |
+| 1.6 — GT4Py.next | DSL Python cartesian + unstructured (FVM / ICON) | Scoped — [#42](https://github.com/maurinl26/fortranspire/issues/42) |
+| 2 — JAX | Kernels fonctionnels différentiables | Partial (0.2.x) |
+| 3 — GHEX | Communications GPU-to-GPU MPI | Future |
+| 4 — Modern I/O | xarray / zarr cloud-native | Future |
+| 5 — Surrogates FNO | Operators neuronaux entraînés sur les sorties GPU | Future |
 
-Les codes multi-domaines (MPI) échangent des halos CPU→GPU→CPU à chaque pas de temps — le roundtrip CPU annule le gain GPU sur clusters multi-nœuds.
-
-[GHEX](https://github.com/ghex-org/GHEX) (GridTools, ETH Zürich) remplace ces échanges par des **communications GPU-to-GPU directes** (RDMA via InfiniBand + CUDA-aware MPI), avec overlap computation/communication.
-
-```fortran
-! Pattern cible Phase 3 — halo exchange GPU-to-GPU
-!$acc parallel loop collapse(2)
-do j = 2, NY-1
-  do i = 2, NX-1
-    call update_stress(...)   ! kernel GPU
-  end do
-end do
-call ghex_exchange(vx, vy)   ! échange halos GPU-to-GPU, sans roundtrip CPU
-```
-
-### Phase 4 — I/O moderne (xarray / zarr)
-
-Remplacer les `WRITE` Fortran et fichiers PostScript par des sorties cloud-native :
-
-```python
-# Après : sorties xarray/zarr — compatibles Pangeo, Dask, stockage objet (S3 / Scaleway / OVHcloud)
-import xarray as xr, zarr
-
-ds = xr.Dataset({
-    "vx":       (["x", "y", "time"], vx_history),
-    "sigma_xx": (["x", "y", "time"], stress_history),
-}, coords={"x": x_coords, "y": y_coords, "time": time_axis})
-
-ds.to_zarr("az://seismic-results/run_001.zarr")
-# Visualisation directe hvPlot, GeoViews, compatible Jupyter
-```
-
-Plus de `PRINT`, plus de fichiers `.pnm` — des fichiers `.zarr` directement exploitables avec les outils data science modernes.
-
-### Phase 5 — Surrogates FNO
-
-Remplacer les kernels FD par des surrogates [FNO](https://arxiv.org/abs/2010.08895) (Fourier Neural Operators) entraînés sur les sorties GPU :
-
-```python
-# Entraîner un surrogate sur les outputs GPU (JAX + Equinox)
-import equinox as eqx
-surrogate = FNO(modes=16, width=64)
-# 1000× plus rapide que la simulation FD pour l'inversion sismique
-```
+Travaux en cours suivis publiquement sur le [tracker](https://github.com/maurinl26/fortranspire/issues) — voir [`ROADMAP.md`](ROADMAP.md) pour le détail.
 
 ---
 
