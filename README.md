@@ -166,7 +166,7 @@ la compréhension sémantique est indispensable (extraction de kernels, généra
 - Python 3.12+, [uv](https://github.com/astral-sh/uv)
 - `gfortran` (vérification syntaxe locale) : `brew install gcc`
 - Endpoint Mistral OpenAI-compatible + API key (`.env`) — La Plateforme Mistral par défaut, ou vLLM/TGI auto-hébergé
-- `nvfortran` (NVIDIA HPC SDK) ou VM GPU Azure pour la compilation GPU
+- `nvfortran` (NVIDIA HPC SDK) ou nœud GPU souverain (Scaleway H100, GENCI, cluster on-prem) pour la compilation GPU
 
 ### Installation
 
@@ -293,7 +293,7 @@ Le serveur MCP peut traiter un repo Fortran de bout en bout sans intervention hu
 | `nvfortran` (NVIDIA HPC SDK) — compilation `-acc -gpu=ccXX` | ❌ (skip GPU step) | ✅ requis |
 | GPU device (T4, A100, …) — benchmark + nsys profile | ❌ | ✅ requis |
 
-> En mode CPU seul, le pipeline va jusqu'à la génération du Fortran OpenACC + Cython et émet `output/compile_gpu.sh` — la compilation GPU est différée sur un nœud équipé (Pangea, Azure NC, GENCI).
+> En mode CPU seul, le pipeline va jusqu'à la génération du Fortran OpenACC + Cython et émet `output/compile_gpu.sh` — la compilation GPU est différée sur un nœud équipé (Scaleway H100, GENCI Jean-Zay, Pangea, cluster on-prem).
 
 **Lancement autonome :**
 
@@ -312,12 +312,10 @@ find $AGENT_WORKSPACE -name "*.f90" -print0 | xargs -0 -n1 uv run agent-gpu
 docker compose up -d --build
 ```
 
-Les artefacts arrivent dans `output/` (voir ci-dessous) ; sur un nœud GPU, ajouter :
-
-```bash
-AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh         # déploie + compile sur GPU distant
-AZURE_GPU_HOST=<ip> bash scripts/bench_gpu.sh <ref>  # mesure le speedup CPU vs GPU
-```
+Les artefacts arrivent dans `output/` (voir ci-dessous). Le script
+`output/compile_gpu.sh` est toujours généré — copie le contenu de
+`output/` sur un nœud GPU (Scaleway H100, GENCI, Pangea, cluster on-prem)
+et lance `bash compile_gpu.sh` pour compiler avec `nvfortran -acc`.
 
 ### Sorties
 
@@ -338,45 +336,27 @@ output/
 
 ---
 
-## 4. ☁️ Déploiement Azure (Infrastructure as Code)
+## 4. ☁️ Déploiement (sovereign GPU)
 
-L'infrastructure complète est provisionnée en une commande via Terraform :
+`fortranspire` ne dépend d'aucun hyperscaler. La compilation GPU s'exécute
+là où tu as du GPU disponible :
 
-```bash
-cd infrastructure/
-terraform init
-terraform apply
-```
+- **Local** — laptop ou workstation avec `nvfortran` (NVIDIA HPC SDK)
+- **Cluster HPC** — GENCI Jean-Zay, Pangea (TotalEnergies), Météo-France
+  Belenos, tout cluster Slurm avec NVIDIA HPC SDK chargé
+- **Cloud souverain à la demande** — [Scaleway H100](https://www.scaleway.com/),
+  OVHcloud GPU, Outscale (cloud souverain français certifié SecNumCloud)
 
-**Ressources créées** (`infrastructure/main.tf`) :
+Le pipeline génère toujours `output/compile_gpu.sh` qui détecte
+l'architecture GPU et choisit les flags `nvfortran -acc -gpu=cc{XX}`
+appropriés. Copie le dossier `output/` sur la cible et lance le script —
+aucune infrastructure pré-provisionnée n'est requise.
 
-| Ressource | Type Azure | Rôle |
-|-----------|-----------|------|
-| `rg-total-seismic-agent` | Resource Group | Périmètre de facturation isolé |
-| `vm-orchestrator-d8` | Standard_D8s_v5 | Pipeline LangGraph + Loki (CPU) |
-| `vm-gpu-t4` | Standard_NC4as_T4_v3 | nvfortran + benchmarks (GPU Spot ~$0.13/h) |
-| `vm-gpu-a100` | Standard_NC24ads_A100_v4 | Production GPU (Spot ~$0.80/h) |
-| `vnet-seismic` | VNet 10.0.0.0/16 | Réseau privé isolé |
-
-**Workflow sur VM GPU** :
-
-```bash
-# 1. Obtenir l'IP de la VM GPU
-bash scripts/get_gpu_ip.sh --set-env
-
-# 2. Lancer le pipeline de transformation
-uv run agent-gpu /path/to/kernel.f90
-
-# 3. Déployer les artefacts et compiler sur GPU
-AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh
-
-# 4. Vérifier l'environnement GPU distant
-AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh --check
-```
-
-> Le script `output/compile_gpu.sh` est toujours généré — copiez `output/` sur n'importe quel nœud GPU (Pangea, Azure, GENCI) et lancez `bash compile_gpu.sh`.
-
-> Quota GPU requis — demande via [Azure Portal](https://portal.azure.com/#blade/Microsoft_Azure_Capacity).
+Pour héberger l'agent en service (MCP HTTP/SSE accessible à toute une
+équipe), le déploiement Docker + Apptainer est documenté dans
+[docs/getting-started/installation.md](docs/getting-started/installation.md)
+(Dockerfile, Dockerfile.hpc pour les sites HPC, apptainer.def, et
+`docker compose up` pour démarrer le serveur MCP).
 
 ---
 
@@ -405,10 +385,10 @@ Voir [TUTORIAL_IDE.md](TUTORIAL_IDE.md) pour le tutoriel complet.
 | Composant | Coût unitaire | Par pipeline | Par mois (100 pipelines) |
 |-----------|--------------|-------------|--------------------------|
 | Mistral-Large (api.mistral.ai) | ~$3/1M tokens input | ~$0.06 (4 appels LLM) | ~$6 |
-| VM D8s_v5 (orchestration) | $0.38/h | ~$0.03 (5 min) | ~$3 |
-| VM T4 Spot (GPU test/bench) | $0.13/h | ~$0.02 (10 min) | ~$2 |
-| Stockage output/ (Azure Blob) | $0.02/GB/mois | <$0.01 | <$1 |
-| **Total PoC** | | **~$0.11** | **~$12/mois** |
+| CPU runner (orchestration) | ~$0.30/h | ~$0.03 (5 min) | ~$3 |
+| GPU à la demande (H100 / A100 spot) | ~$0.80–1.50/h | ~$0.15 (10 min) | ~$15 |
+| Stockage objet `output/` (S3/Scaleway) | ~$0.02/GB/mois | <$0.01 | <$1 |
+| **Total PoC** | | **~$0.25** | **~$25/mois** |
 
 *Comparaison : 1 semaine d'ingénieur HPC senior ≈ 5 000–8 000 €*  
 *Retour sur investissement : > 99% de réduction du coût de portage GPU*
@@ -422,15 +402,23 @@ Voir [TUTORIAL_IDE.md](TUTORIAL_IDE.md) pour le tutoriel complet.
 
 ## 7. 📊 Benchmark GPU — CPU vs GPU Speedup
 
-Après génération du code GPU, comparez les performances avec le script de benchmark intégré :
+Après génération du code GPU, compare les performances directement
+sur ton nœud GPU :
 
 ```bash
-# Benchmark complet sur VM Azure (compile CPU + GPU, mesure speedup)
-AZURE_GPU_HOST=<ip> bash scripts/bench_gpu.sh /path/to/original.f90
+# Compile et lance le binaire CPU de référence + le binaire GPU
+cd output/
+bash compile_gpu.sh            # détecte l'arch et compile avec nvfortran -acc
+./kernel_cpu   < input.dat     # baseline gfortran
+./kernel_gpu   < input.dat     # compilé avec -acc -gpu=cc{XX}
 
-# Avec profiling NSight Systems (rapport détaillé des kernels GPU)
-AZURE_GPU_HOST=<ip> bash scripts/bench_gpu.sh /path/to/original.f90 --nsys
+# Profiling NSight Systems (rapport détaillé des kernels GPU)
+nsys profile --trace=cuda,nvtx ./kernel_gpu < input.dat
 ```
+
+Le rapport `fortranspire bench output/` (voir [docs/getting-started/quickstart.md](docs/getting-started/quickstart.md))
+agrège ces mesures sur plusieurs runs et détecte les régressions de
+performances entre deux versions du pipeline.
 
 **Résultats attendus — seismic_CPML_2D (NX=101, NY=641, NSTEP=2000)** :
 
@@ -962,8 +950,8 @@ ds = xr.Dataset(
     attrs={"source_x": ISOURCE * DELTAX, "source_z": JSOURCE * DELTAY},
 )
 
-# Écriture zarr — compatible Azure Blob Storage, Pangeo, Dask
-ds.to_zarr("az://seismic-results/run_001.zarr", mode="w")
+# Écriture zarr — compatible stockage objet (S3, Scaleway, OVHcloud), Pangeo, Dask
+ds.to_zarr("s3://seismic-results/run_001.zarr", mode="w")
 
 # Lecture et visualisation directe sans conversion
 import hvplot.xarray
@@ -975,7 +963,7 @@ ds["vx"].isel(time=100).hvplot(x="x", y="z", cmap="seismic")
 | Pattern source Fortran | Phase 1 (Cython) | Phase 4 (xarray/zarr) |
 |------------------------|-----------------|----------------------|
 | `WRITE(unit,...) field(NX,NY)` | NumPy array in-memory | `xr.DataArray` avec coords géo |
-| `OPEN / WRITE / CLOSE` fichier `.dat` | Fichier texte Python | Zarr dataset sur Azure Blob |
+| `OPEN / WRITE / CLOSE` fichier `.dat` | Fichier texte Python | Zarr dataset sur stockage objet (S3 / Scaleway / OVHcloud) |
 | Fichier image `.pnm` (PostScript) | Matplotlib imshow | hvPlot interactif / GeoViews |
 | Sismogramme `.dat` par capteur | NumPy array | `xr.DataArray` indexé par receiver |
 | Snapshot tous les N pas | Array 3D accumulé | Zarr avec append en streaming |
@@ -1097,19 +1085,20 @@ La traduction Fortran PURE → JAX est **mécanique** : les subroutines PURE son
 ### Déploiement GPU — workflow complet
 
 ```bash
-# Sur la VM A100/T4 (ou Pangea)
-uv run agent-gpu /path/to/kernel.f90          # pipeline Phase 1
-AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh  # déployer + compiler
-AZURE_GPU_HOST=<ip> bash scripts/test_gpu.sh --check  # vérifier env GPU
+# 1. Sur ton poste, génère le pipeline (CPU only)
+fortranspire gpu /path/to/kernel.f90          # → output/
 
-# SSH direct pour debugger
-ssh azureuser@<ip>
-cd ~/seismic_gpu && bash compile_gpu.sh
-nsys profile ./seismic_cpml_2d_isotropic_second_order_gpu
+# 2. Copie output/ sur un nœud GPU (Scaleway H100, GENCI, Pangea, cluster on-prem)
+rsync -a output/ user@<gpu-node>:~/seismic_gpu/
 
-# Pangea (HPC TotalEnergies)
-AZURE_GPU_HOST=<pangea-node> AZURE_GPU_USER=<login_te> bash scripts/test_gpu.sh
-# Sur Pangea : module load nvhpc/24.1 && bash compile_gpu.sh
+# 3. Sur le nœud GPU
+ssh user@<gpu-node>
+cd ~/seismic_gpu
+bash compile_gpu.sh                    # détecte l'arch GPU + nvfortran -acc
+nsys profile ./kernel_gpu < input.dat  # profiling NVIDIA NSight Systems
+
+# Cluster HPC (GENCI Jean-Zay, Pangea, etc.) : charger nvhpc avant compile
+# (sur Jean-Zay : module load nvhpc/24.1 && bash compile_gpu.sh)
 ```
 
 ---
@@ -1146,7 +1135,7 @@ call ghex_exchange(vx, vy)   ! échange halos GPU-to-GPU, sans roundtrip CPU
 Remplacer les `WRITE` Fortran et fichiers PostScript par des sorties cloud-native :
 
 ```python
-# Après : sorties xarray/zarr — compatibles Pangeo, Dask, Azure Blob
+# Après : sorties xarray/zarr — compatibles Pangeo, Dask, stockage objet (S3 / Scaleway / OVHcloud)
 import xarray as xr, zarr
 
 ds = xr.Dataset({
