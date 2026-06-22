@@ -1,25 +1,38 @@
 """Serveur MCP (FastMCP) exposant le CodeAgent et les pipelines Fortran via HTTP/SSE."""
+from __future__ import annotations
+
 import os
+from typing import Any
+
 from fastmcp import FastMCP
-from fortranspire.agent.code_agent import CodeAgent
 
-_agent: CodeAgent | None = None
+# CodeAgent is imported lazily inside ``_get_agent`` so the module can be
+# loaded by clients that only call the analyze / explain / doc / graph
+# tools (no LLM stack installed). The agent is the only consumer of
+# langchain; the other tools talk to deterministic Loki code paths.
+_agent: Any | None = None
 
 
-def _get_agent() -> CodeAgent:
+def _get_agent() -> Any:
     global _agent
     if _agent is None:
+        from fortranspire.agent.code_agent import CodeAgent  # local import
         _agent = CodeAgent()
     return _agent
 
 
 mcp = FastMCP(
-    name="fortran-gpu-agent",
+    name="fortranspire",
     instructions=(
-        "Agent de transformation Fortran scientifique vers GPU (OpenACC) + Cython.\n"
-        "Phase 1 : translate_kernel_gpu — Fortran → Fortran GPU + Cython wrapper.\n"
-        "Phase 2 : translate_kernel    — Fortran → JAX (expérimental).\n"
-        "Outil général : ask_agent pour questions en langage naturel sur le code."
+        "Pipeline de transformation Fortran 90 legacy.\n"
+        "\n"
+        "Analyse offline (no-LLM): analyze_kernels, explain_port_cost, "
+        "build_call_graph, generate_docs.\n"
+        "Phase 1 (LLM): translate_kernel_gpu — Fortran → Fortran GPU "
+        "(OpenACC) + Cython wrapper.\n"
+        "Phase 2 (LLM): translate_kernel — Fortran → JAX (expérimental).\n"
+        "Profilage: profile_kernels.\n"
+        "Question libre: ask_agent."
     ),
 )
 
@@ -148,6 +161,141 @@ def profile_kernels(filepath: str) -> str:
     state = {"fortran_filepath": filepath, "performance_metrics": {}}  # type: ignore
     result = performance_agent(state)
     return str(result["performance_metrics"])
+
+
+def _capture_main(main_fn, argv: list[str]) -> tuple[int, str]:
+    """Run an argparse-based ``main(argv) -> int`` and capture its stdout.
+
+    Wraps SystemExit (raised on ``--help`` or arg errors) so MCP tools
+    never crash the server. Returns ``(rc, captured_text)``.
+    """
+    import sys
+    from io import StringIO
+
+    buf = StringIO()
+    old_stdout, sys.stdout = sys.stdout, buf
+    try:
+        try:
+            rc = main_fn(argv)
+        except SystemExit as e:
+            rc = int(e.code) if e.code is not None else 0
+    finally:
+        sys.stdout = old_stdout
+    return rc, buf.getvalue()
+
+
+@mcp.tool()
+def analyze_kernels(
+    path: str,
+    sarif_out: str | None = None,
+    no_toolchain_check: bool = False,
+) -> str:
+    """Static Loki-based analysis of one Fortran file or a directory tree.
+
+    No LLM call, deterministic. Suitable as a CI gate or pre-flight check.
+
+    Args:
+        path: Absolute path to a `.f90` file or a directory.
+        sarif_out: If set, writes a SARIF 2.1.0 report to this path
+            (GitHub Code Scanning compatible) using ``--format sarif``.
+        no_toolchain_check: Skip the gfortran / nvfortran probe (useful
+            on hosts where compilers are absent).
+    """
+    from fortranspire.agent.analyze import main as analyze_main
+
+    argv: list[str] = []
+    if sarif_out:
+        argv += ["--format", "sarif", "-o", sarif_out]
+    if no_toolchain_check:
+        argv.append("--no-toolchain-check")
+    argv.append(path)
+
+    rc, text = _capture_main(analyze_main, argv)
+    head = f"analyze rc={rc}\n"
+    if sarif_out:
+        head += f"SARIF report → {sarif_out}\n"
+    return head + text
+
+
+@mcp.tool()
+def explain_port_cost(filepath: str) -> str:
+    """Pre-flight cost + risk estimate. No LLM, no tokens consumed.
+
+    Reports routine count, control-flow complexity, GPU portability
+    score, estimated token spend, and walltime for `translate_kernel_gpu`
+    and `translate_kernel`. Always call this *before* a Phase-1 / Phase-2
+    port to know whether the file is portable and what it would cost.
+
+    Args:
+        filepath: Absolute path to the `.f90` file.
+    """
+    from fortranspire.agent.explain import main as explain_main
+
+    rc, text = _capture_main(explain_main, [filepath])
+    return f"explain rc={rc}\n{text}"
+
+
+@mcp.tool()
+def build_call_graph(path: str, out: str | None = None) -> str:
+    """Mermaid call-graph for a Fortran module or directory.
+
+    No LLM. Outputs a `flowchart LR` Mermaid block (renders in GitHub,
+    mdBook, sphinxcontrib-mermaid).
+
+    Args:
+        path: Absolute path to a `.f90` file or directory.
+        out: Optional file path to write the Markdown output to. When
+            omitted, the Markdown is returned inline.
+    """
+    from fortranspire.agent.call_graph import main as graph_main
+
+    argv: list[str] = []
+    if out:
+        argv += ["-o", out]
+    argv.append(path)
+
+    rc, text = _capture_main(graph_main, argv)
+    return f"graph rc={rc}\n{text}"
+
+
+@mcp.tool()
+def generate_docs(
+    path: str,
+    with_llm: bool = False,
+    dry_run: bool = False,
+    sphinx: bool = False,
+    output_dir: str | None = None,
+) -> str:
+    """Generate inline `!>` docstrings for a Fortran file or directory.
+
+    With ``with_llm=False`` (default), inject placeholders deterministically
+    — safe to call without any API key. With ``with_llm=True``, fill the
+    placeholders by calling the configured LLM endpoint.
+
+    Args:
+        path: Absolute path to a `.f90` file or directory.
+        with_llm: Call the LLM to write the docstring content. When
+            False, ``--no-llm`` is passed to the underlying command.
+        dry_run: Print what would change without writing files.
+        sphinx: When True, also scaffold a Sphinx site under
+            ``output_dir`` (or ``./documentation`` by default).
+        output_dir: Override the Sphinx output directory.
+    """
+    from fortranspire.agent.document import main as doc_main
+
+    argv: list[str] = []
+    if not with_llm:
+        argv.append("--no-llm")
+    if dry_run:
+        argv.append("--dry-run")
+    if sphinx:
+        argv.append("--sphinx")
+    if output_dir:
+        argv += ["--output", output_dir]
+    argv.append(path)
+
+    rc, text = _capture_main(doc_main, argv)
+    return f"doc rc={rc}\n{text}"
 
 
 def _install_auth(mcp_instance) -> None:

@@ -248,6 +248,41 @@ uv run python -c "from fortranspire.llm import get_llm; print(get_llm().invoke('
 
 > Tout endpoint exposant `POST {base}/chat/completions` au format OpenAI fonctionne. Seule la variable `MISTRAL_ENDPOINT` change selon le déploiement.
 
+### Intégrations IDE (Claude Code & mistral-vibe)
+
+`fortranspire` est utilisable depuis deux surfaces sans changement de code :
+
+#### Claude Code (skill local, zéro plomberie MCP)
+
+```bash
+pip install fortranspire
+mkdir -p .claude/skills
+cp -r <fortranspire-repo>/skills/claude-code/fortranspire .claude/skills/
+```
+
+Recharge Claude Code → la slash-command `/fortranspire` apparaît et Claude
+auto-invoque le skill sur tes fichiers `.f90`. Le skill couvre les 13 verbes
+de la CLI et guide Claude vers `explain` (gratuit, sans LLM) **avant** tout
+appel facturé à `gpu` ou `translate`. Détails dans
+[docs/integrations/claude-code.md](docs/integrations/claude-code.md).
+
+#### mistral-vibe (MCP HTTP/SSE)
+
+```bash
+pip install "fortranspire[mcp]"
+fortranspire mcp --port 8000        # SSE sur http://<host>:8000/sse
+```
+
+Enregistre le serveur dans les paramètres MCP de mistral-vibe — neuf
+outils sont exposés (`analyze_kernels`, `explain_port_cost`,
+`build_call_graph`, `generate_docs`, `translate_kernel_gpu`,
+`translate_kernel`, `profile_kernels`, `ask_agent`, `agent_status`).
+Procédure complète dans
+[docs/integrations/mistral-vibe.md](docs/integrations/mistral-vibe.md).
+
+Même agent, deux LLM (Claude US / Mistral EU), trois postures de
+souveraineté — détails dans la doc d'intégration.
+
 ### Usage CLI
 
 ```bash
