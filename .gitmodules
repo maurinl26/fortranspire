@@ -1,0 +1,4 @@
+[submodule "vendor/loki-ifs"]
+	path = vendor/loki-ifs
+	url = git@github.com:maurinl26/loki-ifs.git
+	branch = loki-ifs/0.3.7

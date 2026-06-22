@@ -165,28 +165,29 @@ la compréhension sémantique est indispensable (extraction de kernels, généra
 
 - Python 3.12+, [uv](https://github.com/astral-sh/uv)
 - `gfortran` (vérification syntaxe locale) : `brew install gcc`
-- Loki installé localement (`./loki`) — ECMWF Fortran AST toolkit
 - Endpoint Mistral OpenAI-compatible + API key (`.env`) — La Plateforme Mistral par défaut, ou vLLM/TGI auto-hébergé
 - `nvfortran` (NVIDIA HPC SDK) ou VM GPU Azure pour la compilation GPU
 
 ### Installation
 
-#### Depuis PyPI
+#### Depuis PyPI (recommandé)
 
 ```bash
-pip install fortranspire                                             # core
-pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"    # AST Fortran (voir note)
-pip install "fortranspire[gpu]"                                      # Phase 1 (LangChain + Cython)
+pip install fortranspire                # core + Loki (via loki-ifs) — analyze
+pip install "fortranspire[gpu]"         # Phase 1 (LangChain + Cython)
+pip install "fortranspire[mcp]"         # serveur MCP (HTTP/SSE)
+pip install "fortranspire[all]"         # tout (Phase 1 + Phase 2 + MCP)
 ```
 
-> **À propos de Loki** — ECMWF Loki n'est pas publié sur PyPI (le nom `loki`
-> y est pris par un package d'astronomie sans rapport), et PEP 715 interdit
-> les dépendances `git+https://…` dans les métadonnées publiées. Loki doit
-> donc s'installer en une commande séparée. Le parser de fortranspire
-> retombe automatiquement sur un frontend regex si Loki est absent, mais
-> `analyze` est plus précis avec Loki.
+> **À propos de Loki** — ECMWF Loki n'est pas publié sur PyPI sous son nom
+> d'origine (le nom `loki` y est pris par un package d'astronomie sans
+> rapport). Nous maintenons une redistribution PyPI officielle sous le nom
+> [`loki-ifs`](https://pypi.org/project/loki-ifs/), synchronisée avec
+> [`ecmwf-ifs/loki@0.3.7`](https://github.com/maurinl26/loki-ifs).
+> L'import Python reste `from loki import …` — `loki-ifs` est juste le
+> nom de distribution PyPI. Source : https://github.com/maurinl26/loki-ifs.
 
-#### Depuis les sources (recommandé pour développer)
+#### Depuis les sources (pour développer)
 
 ```bash
 git clone https://github.com/maurinl26/fortranspire
@@ -194,15 +195,12 @@ cd fortranspire
 cp .env.example .env
 
 # Choisir le profil d'installation selon l'usage :
-uv sync --group loki                          # core + Loki (AST) — analyze
-uv sync --group loki --extra gpu              # Phase 1 : Fortran → GPU + Cython
-uv sync --group loki --extra mcp              # serveur MCP (HTTP/SSE)
-uv sync --group loki --extra jax              # Phase 2 : Fortran → JAX
-uv sync --group loki --extra all              # tout (Phase 1 + Phase 2 + MCP)
+uv sync                       # core + Loki (via loki-ifs) — analyze
+uv sync --extra gpu           # Phase 1 : Fortran → GPU + Cython
+uv sync --extra mcp           # serveur MCP (HTTP/SSE)
+uv sync --extra jax           # Phase 2 : Fortran → JAX
+uv sync --extra all           # tout (Phase 1 + Phase 2 + MCP)
 ```
-
-Le groupe `loki` (PEP 735) est résolu localement par uv depuis le git tag
-`0.3.7` — il ne fait pas partie des métadonnées publiées sur PyPI.
 
 ### Connecter un endpoint Mistral (souverain)
 
@@ -1180,7 +1178,7 @@ surrogate = FNO(modes=16, width=64)
 | Paquet | Rôle |
 |--------|------|
 | `langgraph`, `langchain-openai` | Orchestration multi-agents |
-| `loki @ file://./loki` | Parsing et transformation AST Fortran (ECMWF) |
+| `loki-ifs>=0.3.7` | Parsing et transformation AST Fortran (redistribution PyPI d'ECMWF Loki) |
 | `fastmcp` | Serveur MCP HTTP/SSE |
 | `Cython`, `numpy` | Wrapper Python/Fortran |
 | `gfortran` (brew install gcc) | Vérification syntaxe locale |

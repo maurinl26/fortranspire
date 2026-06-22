@@ -17,20 +17,38 @@
 ## From PyPI
 
 ```bash
-pip install fortranspire                                              # core
-pip install "loki @ git+https://github.com/ecmwf-ifs/loki@0.3.7"     # AST (see below)
-pip install "fortranspire[gpu]"                                       # Phase 1 transforms
+pip install fortranspire                # core + Loki (via loki-ifs) — analyze
+pip install "fortranspire[gpu]"         # + Phase 1 transformations
+pip install "fortranspire[mcp]"         # + MCP HTTP/SSE server
+pip install "fortranspire[all]"         # everything except docs/tests
 ```
 
-### Why is Loki a separate command?
+### How Loki is shipped on PyPI
 
 ECMWF Loki is not published on PyPI under that name (the PyPI `loki` is an
 unrelated astronomy package), and [PEP 715] forbids direct URL dependencies
-(`git+https://…`) inside published metadata. We therefore ship fortranspire
-with **no Loki dependency declared** and ask users to install it in a
-second step. The parser falls back to a regex frontend when Loki is absent,
-so the package imports cleanly — but `analyze` is significantly more
-accurate with Loki present.
+(`git+https://…`) inside published metadata.
+
+We maintain an *unofficial PyPI redistribution* of upstream Loki under the
+name **[`loki-ifs`](https://pypi.org/project/loki-ifs/)** at upstream tag
+`0.3.7`, source at https://github.com/maurinl26/loki-ifs. `fortranspire`
+depends on `loki-ifs>=0.3.7` as a regular PyPI dep, so `pip install
+fortranspire` resolves Loki in one step.
+
+The Python import name remains `loki` — code written for upstream ECMWF
+Loki imports unchanged:
+
+```python
+from loki import Sourcefile, Frontend, FindNodes, BasicType
+```
+
+If you prefer to install Loki yourself (e.g. against a different upstream
+tag or a private fork), you can override the PyPI dep:
+
+```bash
+pip install --no-deps fortranspire
+pip install "loki @ git+https://github.com/ecmwf-ifs/loki@<tag>"   # in your own project
+```
 
 [PEP 715]: https://peps.python.org/pep-0715/
 
@@ -40,26 +58,21 @@ accurate with Loki present.
 git clone https://github.com/maurinl26/fortranspire
 cd fortranspire
 cp .env.example .env       # fill in MISTRAL_ENDPOINT / MISTRAL_API_KEY
-uv sync --group loki       # core + Loki (resolved via [tool.uv.sources])
+uv sync                    # core + Loki (via loki-ifs from PyPI)
 ```
-
-The `--group loki` flag activates the PEP 735 dependency group declared in
-`pyproject.toml`; uv resolves it transparently to the pinned git tag
-(`0.3.7`). Dependency groups are not part of the published PyPI metadata,
-so they do not violate PEP 715.
 
 Activate the venv with `source .venv/bin/activate` or prefix commands with
 `uv run`.
 
 ## Optional extras
 
-The default install (`uv sync --group loki`) gives you the **core** plus
-the Loki AST toolkit (~50 MB). That is enough to run `fortranspire
-analyze` — the analyze-only mode. Pull in extras for the other agents:
+The default install (`uv sync`) gives you the **core** plus the Loki AST
+toolkit (~50 MB). That is enough to run `fortranspire analyze` — the
+analyze-only mode. Pull in extras for the other agents:
 
 | Extra      | What it adds                                                | When to use                                  |
 | ---------- | ----------------------------------------------------------- | -------------------------------------------- |
-| *(none)*   | core: NumPy, python-dotenv, LangGraph                       | imports + parser regex fallback              |
+| *(none)*   | core: loki-ifs, NumPy, python-dotenv, LangGraph             | `fortranspire analyze` (CI / pre-commit)     |
 | `cpu`      | alias for "no extras" — discoverable for CI scripts         | Same as above, explicit                      |
 | `gpu`      | LangChain stack + Cython                                    | `fortranspire gpu` (Phase 1)                 |
 | `mcp`      | FastMCP + `[gpu]`                                           | `run-mcp` (HTTP/SSE server in IDEs / CI)     |
@@ -70,16 +83,16 @@ analyze` — the analyze-only mode. Pull in extras for the other agents:
 
 ```bash
 # Analyze-only (CI / pre-commit)
-uv sync --group loki                              # core + Loki AST
+uv sync                          # core + Loki
 
 # Full transformation pipeline (Phase 1 + Phase 2)
-uv sync --group loki --extra all
+uv sync --extra all
 
 # Anything in between
-uv sync --group loki --extra gpu                  # Phase 1 only
-uv sync --group loki --extra mcp                  # MCP server (pulls [gpu])
-uv sync --group loki --extra jax                  # Phase 2 only
-uv sync --extra docs --extra tests                # docs + tests, no Loki needed
+uv sync --extra gpu              # Phase 1 only
+uv sync --extra mcp              # MCP server (pulls [gpu])
+uv sync --extra jax              # Phase 2 only
+uv sync --extra docs --extra tests
 ```
 
 ## Compiler detection

@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _(Add upcoming changes here.)_
 
+## [0.1.3] — 2026-06-22
+
+Patch release. Restores a single-step PyPI install by depending on the
+new [`loki-ifs`](https://pypi.org/project/loki-ifs/) PyPI distribution.
+
+### Added
+
+- **`loki-ifs>=0.3.7` is now a core dependency.** `pip install
+  fortranspire` resolves Loki in one step. `loki-ifs` is an unofficial
+  PyPI redistribution of `ecmwf-ifs/loki@0.3.7` published under our
+  control (source: https://github.com/maurinl26/loki-ifs). The Python
+  import name remains `loki`, so all parser code is unchanged.
+
+### Changed
+
+- **Removed the PEP 735 `[dependency-groups] loki` block** and the
+  `[tool.uv.sources]` Loki override. Both were workarounds for the
+  v0.1.2 era when Loki had to be installed by hand. `uv sync` now
+  resolves Loki transparently from PyPI.
+
+### Documentation
+
+- README + `docs/getting-started/installation.md` rewritten to reflect
+  the single-step `pip install fortranspire`. The "two-step install"
+  callout is replaced with an explanation of how `loki-ifs` relates to
+  upstream ECMWF Loki and how to override it if you want a different
+  Loki version.
+
 ## [0.1.2] — 2026-06-22
 
 Patch release. Unblocks the first PyPI upload by removing the direct
