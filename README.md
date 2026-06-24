@@ -1,6 +1,6 @@
 <div align="center">
 
-# fortranspire
+# 🚀 fortranspire
 
 **An LLM + Model Context Protocol pipeline that ports legacy Fortran
 HPC kernels to GPU (OpenACC) and differentiable JAX.**
@@ -27,9 +27,23 @@ exposed both as a CLI and as an MCP server, so it is callable from
 mistral-vibe, Claude Code, Claude Desktop, Cursor, or any MCP-aware
 agent — and from CI.
 
+### 📑 Table of contents
+
+- [⚡ Quick start with mistral-vibe](#-quick-start-with-mistral-vibe)
+- [🎯 What this solves](#-what-this-solves)
+- [🏗️ Architecture](#️-architecture)
+- [📦 Installation](#-installation)
+- [🛠️ CLI usage](#️-cli-usage)
+- [🔌 IDE integrations](#-ide-integrations)
+- [🔬 Fortran patterns handled](#-fortran-patterns-handled)
+- [🗺️ Roadmap](#️-roadmap)
+- [📚 Documentation, citation, contribution](#-documentation-citation-contribution)
+- [📬 Contact](#-contact)
+- [📜 License](#-license)
+
 ---
 
-## ⚡ Quick start with mistral-vibe (60 seconds)
+## ⚡ Quick start with mistral-vibe
 
 `fortranspire` ships an MCP server you can plug straight into
 [`mistral-vibe`](https://github.com/mistralai/mistral-vibe) over stdio
@@ -74,14 +88,15 @@ FORT00x risks — with **zero LLM tokens consumed by fortranspire**.
 Full walkthrough (PHYEX kernel triage → call-graph → Phase-1 OpenACC
 port) in [`docs/getting-started/with-mistral-vibe.md`](docs/getting-started/with-mistral-vibe.md).
 
+> [!NOTE]
 > **Why this matters.** The codebase stays on disk, Mistral codestral
-> runs in EU, Loki + the deterministic harness absorb 60-70% of the
+> runs in EU, Loki + the deterministic harness absorb 60-70 % of the
 > work — the LLM is a fungible component, swappable for Claude or
 > self-hosted vLLM.
 
 ---
 
-## What this solves
+## 🎯 What this solves
 
 Legacy scientific HPC codes — IFS at ECMWF, ARPEGE and AROME at
 Météo-France, PHYEX at CNRM, SURFEX, seismic codes at the major energy
@@ -104,7 +119,7 @@ loops, and surrogate modelling.
 
 ---
 
-## Architecture
+## 🏗️ Architecture
 
 A six-stage LangGraph state machine. Two stages call the LLM; four are
 deterministic.
@@ -141,7 +156,7 @@ the activation-order rationale and worked examples.
 
 ---
 
-## Installation
+## 📦 Installation
 
 ### From PyPI (recommended)
 
@@ -154,6 +169,7 @@ uv pip install "fortranspire[mcp]"           # MCP server
 uv pip install "fortranspire[all]"           # Phase 1 + Phase 2 + MCP
 ```
 
+> [!IMPORTANT]
 > **About Loki.** ECMWF Loki is not published on PyPI under its
 > original name (the slot is taken by an unrelated astronomy package).
 > We maintain a redistribution under the name
@@ -190,7 +206,7 @@ OpenAI-compatible server — see
 
 ---
 
-## CLI usage
+## 🛠️ CLI usage
 
 ```bash
 fortranspire analyze src/                    # Loki AST audit — no LLM, CI-friendly
@@ -203,18 +219,19 @@ fortranspire mcp --stdio                     # MCP server, stdio transport
 fortranspire mcp                             # MCP server, SSE on $MCP_HOST:$MCP_PORT
 ```
 
-Always call `explain` before a paid `gpu`/`translate` — it tells you
-whether the file is portable and what a full port would cost in
-tokens. Zero LLM tokens are consumed by `explain`, `analyze`, `graph`,
-or `doc --no-llm`.
+> [!TIP]
+> Always call `explain` before a paid `gpu`/`translate` — it tells
+> you whether the file is portable and what a full port would cost in
+> tokens. Zero LLM tokens are consumed by `explain`, `analyze`,
+> `graph`, or `doc --no-llm`.
 
 ---
 
-## IDE integrations
+## 🔌 IDE integrations
 
 ### mistral-vibe
 
-See the [quick start](#-quick-start-with-mistral-vibe-60-seconds)
+See the [quick start](#-quick-start-with-mistral-vibe)
 above, or the
 [full walkthrough](docs/integrations/mistral-vibe.md) covering stdio
 config, HTTP/SSE deployment for permanent service, and the PHYEX demo.
@@ -251,14 +268,14 @@ Nine tools exposed by the server:
 | `build_call_graph` | Mermaid call-graph | No |
 | `generate_docs` | `!>` docstring injection (no-LLM or LLM-driven) | Optional |
 | `translate_kernel_gpu` | Phase 1 — Fortran → OpenACC + Cython | Yes |
-| `translate_kernel` | Phase 2 — Fortran → JAX (experimental) | Yes |
+| `translate_kernel` | Phase 2 — Fortran → JAX ⚠️ experimental | Yes |
 | `profile_kernels` | Performance benchmarking | No |
 | `ask_agent` | Natural-language query against the codebase | Yes |
 | `agent_status` | Dump server config | No |
 
 ---
 
-## Fortran patterns handled
+## 🔬 Fortran patterns handled
 
 Eleven recurring patterns from production seismic and atmospheric
 codes are documented in
@@ -270,14 +287,15 @@ explicit `KIND` types, `LOGICAL PARAMETER` flags → `#ifdef`, MPI halo
 exchange → GHEX (Phase 3), and Fortran I/O → xarray/zarr + DLPack
 (Phase 4).
 
-If you hit a pattern not on that list, please open an
-[issue](https://github.com/maurinl26/fortranspire/issues) with a
-minimal reproducer — adding a new pattern is usually a one-stage
-change plus a fixture.
+> [!TIP]
+> If you hit a pattern not on that list, please open an
+> [issue](https://github.com/maurinl26/fortranspire/issues) with a
+> minimal reproducer — adding a new pattern is usually a one-stage
+> change plus a fixture.
 
 ---
 
-## Roadmap
+## 🗺️ Roadmap
 
 The strategic roadmap, technical phases, and deployment surfaces are
 tracked in [**ROADMAP.md**](ROADMAP.md). Quick view:
@@ -297,7 +315,7 @@ Work in progress is tracked publicly on the
 
 ---
 
-## Documentation, citation, contribution
+## 📚 Documentation, citation, contribution
 
 - **Documentation**: [fortranspire.readthedocs.io](https://fortranspire.readthedocs.io/) (Sphinx)
 - **JOSS paper draft**: [`paper.md`](paper.md) — build via the
@@ -310,14 +328,16 @@ Work in progress is tracked publicly on the
 - **Code of conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) —
   Contributor Covenant 2.1.
 
-Beta testers welcome. If you maintain a Fortran legacy code (weather,
-seismic, CFD, plasma) and a `.f90` file breaks the pipeline, please
-open an issue with the file attached — adding fixture-driven coverage
-is the fastest path to making the pipeline more robust.
+> [!IMPORTANT]
+> **Beta testers welcome.** If you maintain a Fortran legacy code
+> (weather, seismic, CFD, plasma) and a `.f90` file breaks the
+> pipeline, please open an issue with the file attached — adding
+> fixture-driven coverage is the fastest path to making the pipeline
+> more robust.
 
 ---
 
-## Contact
+## 📬 Contact
 
 [Loïc Maurin](https://www.linkedin.com/in/lo%C3%AFc-maurin/) —
 External Lecturer, École Nationale de la Météorologie, Toulouse —
@@ -330,6 +350,6 @@ assistance.
 
 ---
 
-## License
+## 📜 License
 
 Apache 2.0 — see [LICENSE](LICENSE).
