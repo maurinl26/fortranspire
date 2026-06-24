@@ -40,10 +40,12 @@ through `scikit-build`, and (iv) on demand, a JAX [@jax2018github]
 translation of the same kernel that is differentiable and JIT-compilable by
 XLA. The AST stage uses Loki [@loki2024], the ECMWF Fortran transformation
 toolkit; the LLM stage uses any OpenAI-compatible endpoint, including the
-sovereign European Mistral API [@mistral2024] or a self-hosted
-vLLM [@kwon2023efficient] / TGI / Ollama server. The pipeline ships with
-container images (Docker, Apptainer) for HPC sites and reproducible local
-runs.
+sovereign European Mistral API [@mistral2024], with Codestral
+[@codestral2024] selected by default for the code-generation stages and
+Mistral Large 2 [@mistrallarge2024] for the semantic reasoning stages.
+A self-hosted vLLM [@kwon2023efficient] / TGI / Ollama server is an
+equally supported alternative. The pipeline ships with container images
+(Docker, Apptainer) for HPC sites and reproducible local runs.
 
 # Statement of need
 
@@ -106,19 +108,27 @@ in industrial R&D.
 
 Three threads of prior work overlap with `fortranspire`.
 
-**Deterministic source-to-source compilers.** PSyclone
-[@psyclone2024] (UK STFC) programmatically rewrites Fortran for
-OpenACC, OpenMP, and Kokkos via user-provided transformation scripts;
-it underpins the UK Met Office LFRic dynamical core and inserts GPU
-offload pragmas into NEMO. CLAW [@clausecker2018claw] (ETH Zürich) is
-an earlier Fortran DSL with similar source-to-source ambitions in
-weather and climate models. GPUFORT [@gpufort2023] (AMD) emits CUDA
-Fortran and HIP from rule-based transformation scripts. Loki
-[@loki2024], on which `fortranspire` builds, plays the equivalent
-role inside the ECMWF IFS modernisation. These tools assume the
-input code is already modular: they do not lift `COMMON` blocks,
-refactor `SAVE` state, or extract kernels from monolithic
-`PROGRAM`s — precisely the steps where LLM guidance contributes.
+**Deterministic source-to-source compilers and stencil DSLs.**
+PSyclone [@psyclone2024] (UK STFC) programmatically rewrites Fortran
+for OpenACC, OpenMP, and Kokkos via user-provided transformation
+scripts; it underpins the UK Met Office LFRic dynamical core and
+inserts GPU offload pragmas into NEMO. CLAW [@clausecker2018claw]
+(ETH Zürich) is an earlier Fortran DSL with similar source-to-source
+ambitions in weather and climate models. GPUFORT [@gpufort2023] (AMD)
+emits CUDA Fortran and HIP from rule-based transformation scripts.
+Loki [@loki2024], on which `fortranspire` builds, plays the equivalent
+role inside the ECMWF IFS modernisation. A parallel line of work
+takes the *rewrite-in-a-Python-DSL* approach rather than transform
+Fortran in place: GT4Py [@paredes2023gt4py; @gt4pynext2024] (ETH
+Zürich CSCS) provides a Python-embedded stencil DSL targeting
+heterogeneous CPU–GPU architectures, used notably by Ubbiali et al.
+[@ubbiali2025cloudsc] to port the ECMWF CLOUDSC microphysics scheme
+across three leadership-class GPU-equipped supercomputers. These
+tools assume the input code is either already modular or that
+significant manual rewriting in the DSL is acceptable; they do not
+lift `COMMON` blocks, refactor `SAVE` state, or extract kernels from
+monolithic `PROGRAM`s — precisely the steps where LLM guidance
+contributes in `fortranspire`.
 
 **Monolithic neural transpilers.** CodeRosetta
 [@tehranijamsaz2024coderosetta] is an encoder-decoder transformer
@@ -204,6 +214,19 @@ NumPy view. These are the parts where a structured rule-based system
 would either fail (no closed-form rule covers the diversity of
 production codes) or require so many special cases that the rule base
 itself becomes a maintenance liability.
+
+Two distinct model roles are used in practice. The *reasoning* stage
+(kernel extraction, stage 2) benefits from a high-capability flagship
+model; we default to Mistral Large 2 [@mistrallarge2024]. The
+*code-generation* stages (OpenACC pragma insertion, Cython wrapping,
+docstring synthesis — stages 4 and 5) are well-served by a smaller
+code-specialised model with fill-in-the-middle training; we default
+to Codestral [@codestral2024]. Both run on Mistral La Plateforme
+[@mistral2024] and the role assignment is overridable through
+the `MISTRAL_MODEL_REASONING` and `MISTRAL_MODEL_CODE` environment
+variables, so practitioners running a self-hosted vLLM or another
+sovereign-EU endpoint can swap in any pair of OpenAI-compatible
+chat-completion models.
 
 ## Why an agent, not a one-shot prompt
 
