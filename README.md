@@ -160,7 +160,10 @@ uv pip install "fortranspire[all]"           # Phase 1 + Phase 2 + MCP
 > [`loki-ifs`](https://pypi.org/project/loki-ifs/), tracking
 > [`ecmwf-ifs/loki@0.3.7`](https://github.com/maurinl26/loki-ifs). The
 > Python import name is still `from loki import …` — `loki-ifs` is
-> the PyPI distribution name only.
+> the PyPI distribution name only. This redistribution is maintained
+> **until ECMWF publishes an official Loki distribution on PyPI**, at
+> which point fortranspire will switch its dependency over and the
+> `loki-ifs` package will be deprecated.
 
 ### From source
 
