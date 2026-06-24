@@ -88,15 +88,12 @@ A typical run consumes four LLM calls (~2 minutes wall-clock, ~0.04 USD on
 Mistral `codestral-latest` or ~0.06 USD on Mistral-Large) and produces a
 kernel that compiles for GPU and is importable from Python.
 
-To our knowledge no other open-source tool combines deterministic Fortran
-AST transformation, LLM-driven kernel refactoring, GPU pragma insertion,
+`fortranspire`'s contribution is the combination of deterministic AST
+transformation, LLM-driven semantic refactoring, GPU pragma insertion,
 Cython packaging, and optional JAX translation behind a single MCP
-interface. Related efforts cover individual stages: Loki [@loki2024]
-provides the AST and transformation framework, F2PY [@f2py2009] and Cython
-[@behnel2011cython] handle wrapping, OpenACC [@openacc2024] provides the
-pragma model, and JAX [@jax2018github] provides the differentiable
-back-end. `fortranspire` glues these together with an LLM acting as the
-"semantic glue" exactly where deterministic rules fall short.
+interface; the related-work section below positions this against the
+three threads of prior art (deterministic source-to-source compilers,
+monolithic neural transpilers, and agentic LLM workflows).
 
 The MCP server makes the pipeline addressable from any MCP-aware client
 (Claude Code, Claude Desktop, Cursor, mistral-vibe, VS Code agents), so
@@ -104,6 +101,53 @@ researchers can port a kernel without leaving their editor. The same code
 runs unchanged in a CI job, an Apptainer container on an HPC login node, or
 a sovereign-EU cloud VM, addressing the data-residency constraints common
 in industrial R&D.
+
+# Related work
+
+Three threads of prior work overlap with `fortranspire`.
+
+**Deterministic source-to-source compilers.** PSyclone
+[@psyclone2024] (UK STFC) programmatically rewrites Fortran for
+OpenACC, OpenMP, and Kokkos via user-provided transformation scripts;
+it underpins the UK Met Office LFRic dynamical core and inserts GPU
+offload pragmas into NEMO. CLAW [@clausecker2018claw] (ETH Zürich) is
+an earlier Fortran DSL with similar source-to-source ambitions in
+weather and climate models. GPUFORT [@gpufort2023] (AMD) emits CUDA
+Fortran and HIP from rule-based transformation scripts. Loki
+[@loki2024], on which `fortranspire` builds, plays the equivalent
+role inside the ECMWF IFS modernisation. These tools assume the
+input code is already modular: they do not lift `COMMON` blocks,
+refactor `SAVE` state, or extract kernels from monolithic
+`PROGRAM`s — precisely the steps where LLM guidance contributes.
+
+**Monolithic neural transpilers.** CodeRosetta
+[@tehranijamsaz2024coderosetta] is an encoder-decoder transformer
+trained on parallel-code pairs covering Fortran↔C++ and C++↔CUDA.
+HPC-Coder [@nichols2024hpccoder] fine-tunes a base LLM on HPC
+sources and tasks. Fortran2CPP [@chen2024fortran2cpp] uses
+multi-turn dialogues and a dual-agent setup to translate Fortran to
+C++. Godoy et al. [@godoy2024llmhpc] benchmark off-the-shelf GPT
+models across HPC kernels in C++, Fortran, Python, and Julia,
+finding correctness strongly correlates with the maturity of the
+target programming model. All of these operate on full files in
+one shot, do not interleave deterministic AST analysis to bound
+LLM responsibility, and do not expose the pipeline through a
+tool-call interface usable from a developer's editor.
+
+**Agentic LLM workflows.** Gupta et al. [@gupta2025kokkos] propose
+the closest design to `fortranspire`: an autonomous agentic
+workflow translating legacy Fortran to performance-portable
+Kokkos C++. `fortranspire` differs in three ways: (i) it targets
+OpenACC + Cython rather than Kokkos, keeping the Python ML and
+data-science ecosystems reachable through `iso_c_binding` and
+NumPy typed memoryviews, and adding an optional JAX (Phase 2)
+output for differentiable use cases; (ii) it interleaves Loki
+deterministic stages with the LLM stages, capping LLM
+responsibility at the semantic edges and bounding token spend at
+four calls per kernel by construction; (iii) it exposes the
+pipeline as an MCP server so any conformant client (mistral-vibe,
+Claude Code, Cursor) can drive the port from a developer's
+editor without writing client-specific integration code.
 
 # Functionality
 
