@@ -171,6 +171,61 @@ project documentation and covered by fixture kernels in the test suite.
 These patterns cover the overwhelming majority of legacy scientific
 Fortran encountered in seismic and atmospheric production codes.
 
+## Where the LLM intervenes (and where it does not)
+
+Fortran 90/2003 is a structured domain: the grammar is closed and
+fully parseable, OpenACC is a versioned standard with a finite
+directive vocabulary, the `iso_c_binding` mapping between Fortran
+types and C is mechanical, and validation reduces to compiling with
+two reference toolchains. The bulk of the transformation work is
+therefore amenable to deterministic AST and template rules. Concretely,
+six of the eight pipeline stages are LLM-free:
+
+| Stage | Tool | LLM call? | What it does |
+| ----- | ---- | --------- | ------------- |
+| 1. Parse | Loki [@loki2024] | No | AST extraction, `INTENT` / `SAVE` / `COMMON` detection, loop and I/O census |
+| 2. Extract | LLM | **Yes** | Lift kernels from monolithic `PROGRAM` into a `MODULE`; eliminate `COMMON`; surface `SAVE` as `INTENT(INOUT)` |
+| 3. Purity | AST rules | No | Annotate `PURE`/`ELEMENTAL` where legal (no I/O, no `SAVE`, explicit `INTENT`) |
+| 4. OpenACC | LLM | **Yes** | Insert `!$acc parallel loop collapse(...)` and `!$acc data copyin/copy` around the time loop |
+| 5. Cython | LLM (×2) | **Yes** | Generate `.pyx` with typed memoryviews and `iso_c_binding` header |
+| 6. CPU validation | `gfortran` [@gfortran] | No | Compile original and OpenACC variants; assert syntactic correctness |
+| 7. GPU validation | `nvfortran -acc` (or `flang` [@flang] on roadmap) | No | Compile the OpenACC variant for the target architecture |
+| 8. Equivalence | Test harness | No | Run both binaries on a deterministic input, assert `numpy.allclose` |
+
+The LLM is the *minority partner*: it intervenes only at the three
+semantic edges where deterministic rules cannot infer programmer
+intent. Stage 2 must decide what constitutes a kernel inside a
+five-thousand-line `PROGRAM` and how to expose its hidden state;
+stage 4 must place the `!$acc data` region at the temporal granularity
+that minimises host-device traffic without breaking the time-step
+dependency; stage 5 must map Fortran `OPTIONAL` arguments and array
+descriptors to a Cython interface that preserves the column-major
+NumPy view. These are the parts where a structured rule-based system
+would either fail (no closed-form rule covers the diversity of
+production codes) or require so many special cases that the rule base
+itself becomes a maintenance liability.
+
+## Why an agent, not a one-shot prompt
+
+A structured domain still requires an agent — that is, a loop with
+state, validation, and retry — because the three LLM stages above are
+not statistically independent. A wrong kernel boundary at stage 2
+propagates into wrong `!$acc data` clauses at stage 4 and an
+incompatible Cython signature at stage 5; a wrong OpenACC layout at
+stage 4 causes a `nvfortran -acc` failure at stage 7 that the LLM has
+no way to diagnose unless the compiler log is fed back into its
+context. `fortranspire` therefore orchestrates the eight stages with
+LangGraph [@langgraph2024]: each stage reads from and writes to a typed
+state dictionary, and the validation stages 6–8 can route the pipeline
+back to stage 4 (or 2) with the compiler log appended to the LLM
+context, capped at three retries to bound token spend. Intermediate
+artefacts are written to `output/` between stages so a human reviewer
+can inspect or hand-edit them and re-run from any checkpoint without
+re-issuing the upstream LLM calls. Together, the eight-stage typed
+state machine, the validation-driven retry loop, the deterministic
+majority, and the MCP exposure constitute the agent design that the
+title of this paper refers to.
+
 # Real-world demonstration
 
 The pipeline is exercised end-to-end against

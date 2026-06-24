@@ -208,3 +208,40 @@
   year      = {2025},
   doi       = {10.48550/arXiv.2509.12443}
 }
+
+@misc{gfortran,
+  title        = {{GNU Fortran (gfortran)} — the {Fortran} front end of
+                  the {GNU} Compiler Collection},
+  author       = {{Free Software Foundation}},
+  howpublished = {\url{https://gcc.gnu.org/fortran/}},
+  year         = {2024},
+  note         = {Open-source Fortran 95/2003/2008/2018 compiler. Used
+                  by {fortranspire} for the deterministic CPU
+                  compilation gate and for the {OpenACC} fork compiled
+                  via \texttt{gfortran -fopenacc}}
+}
+
+@misc{flang,
+  title        = {{Flang} — the {LLVM} {Fortran} front end},
+  author       = {{LLVM Project}},
+  howpublished = {\url{https://flang.llvm.org/}},
+  year         = {2024},
+  note         = {Open-source Fortran 95+ compiler emitting {LLVM IR};
+                  underpins the {ECMWF} {IFS} {Flang}-on-{MLIR}
+                  modernisation pathway. Mentioned in {fortranspire}'s
+                  validation roadmap as an alternative compilation
+                  target alongside \texttt{gfortran} and
+                  \texttt{nvfortran}}
+}
+
+@misc{langgraph2024,
+  title        = {{LangGraph} — graph-based orchestration for {LLM}
+                  agents},
+  author       = {{LangChain Inc.}},
+  howpublished = {\url{https://github.com/langchain-ai/langgraph}},
+  year         = {2024},
+  note         = {State-machine orchestration framework used by
+                  {fortranspire} to express the eight-stage pipeline,
+                  the human-in-the-loop checkpoints, and the
+                  validation-driven retry loop}
+}
