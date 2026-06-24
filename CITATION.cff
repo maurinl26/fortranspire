@@ -40,9 +40,13 @@ license: Apache-2.0
 license-url: "https://www.apache.org/licenses/LICENSE-2.0"
 repository-code: "https://github.com/maurinl26/fortranspire"
 url: "https://github.com/maurinl26/fortranspire"
-version: "0.1.3"
-date-released: "2026-06-22"
+version: "0.2.0"
+date-released: "2026-06-24"
+doi: "10.5281/zenodo.20792357"
 identifiers:
+  - description: "Zenodo DOI for fortranspire v0.2.0"
+    type: doi
+    value: "10.5281/zenodo.20792357"
   - description: "Latest GitHub release"
     type: url
     value: "https://github.com/maurinl26/fortranspire/releases/latest"

@@ -11,6 +11,7 @@ HPC kernels to GPU (OpenACC) and differentiable JAX.**
 [![MCP](https://img.shields.io/badge/MCP-Ready-green.svg)](https://modelcontextprotocol.io/)
 [![Documentation Status](https://readthedocs.org/projects/fortranspire/badge/?version=latest)](https://fortranspire.readthedocs.io/en/latest/?badge=latest)
 [![JOSS draft](https://github.com/maurinl26/fortranspire/actions/workflows/draft-paper.yml/badge.svg)](https://github.com/maurinl26/fortranspire/actions/workflows/draft-paper.yml)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20792357.svg)](https://doi.org/10.5281/zenodo.20792357)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
 
 </div>
@@ -333,7 +334,8 @@ Work in progress is tracked publicly on the
   `draft-paper` GitHub Action
 - **Citation**: see [`CITATION.cff`](CITATION.cff) /
   [`codemeta.json`](codemeta.json) / [`.zenodo.json`](.zenodo.json).
-  Once a DOI is assigned, the badge above will resolve.
+  v0.2.0 archived on Zenodo —
+  [`10.5281/zenodo.20792357`](https://doi.org/10.5281/zenodo.20792357).
 - **Contributing**: [`CONTRIBUTING.md`](CONTRIBUTING.md) — testing, PR
   conventions, pattern-fixture format.
 - **Code of conduct**: [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) —

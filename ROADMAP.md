@@ -87,7 +87,8 @@ entry point for IDEs and agents. Today it deploys to:
 - [x] `paper.bib` populated with Loki, OpenACC, GT4Py, JAX, Mistral references
 - [x] `.zenodo.json` + `CITATION.cff` ready for DOI minting
 - [x] Read the Docs hosting active
-- [ ] First Zenodo DOI minted (webhook fires on next tag)
+- [x] First Zenodo DOI minted — v0.2.0 archived as
+      [`10.5281/zenodo.20792357`](https://doi.org/10.5281/zenodo.20792357)
 - [ ] JOSS submission opened
 - [ ] First independent reviewer feedback addressed
 - [ ] Paper accepted, DOI cited in README badge
