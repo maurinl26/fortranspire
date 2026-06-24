@@ -2,9 +2,51 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 from typing import Any
 
 from fastmcp import FastMCP
+
+from fortranspire.config import config
+
+
+def _jail(user_path: str) -> Path:
+    """Resolve ``user_path`` and refuse anything that escapes the workspace.
+
+    The MCP tools accept file/directory paths from network-reachable
+    clients. Without a check, a malicious or careless tool argument
+    (``../../etc/passwd``, a symlink farm, ``/etc/shadow``) would be
+    happily read or written. We resolve the path, then assert that the
+    real path is contained under ``config.workspace_dir`` — or under any
+    of the comma-separated extra roots in
+    ``FORTRANSPIRE_WORKSPACE_EXTRA_ROOTS``. Symlinks are followed by
+    ``resolve(strict=True)``, so a symlink jail-break still resolves to
+    its actual target before the check.
+
+    Set ``FORTRANSPIRE_DISABLE_JAIL=1`` to bypass — only safe when the
+    server runs in stdio mode under a trusted IDE process.
+    """
+    if os.getenv("FORTRANSPIRE_DISABLE_JAIL") == "1":
+        return Path(user_path).expanduser()
+
+    resolved = Path(user_path).expanduser().resolve(strict=False)
+    roots = [Path(config.workspace_dir).resolve()]
+    extra = os.getenv("FORTRANSPIRE_WORKSPACE_EXTRA_ROOTS", "")
+    roots.extend(Path(p).expanduser().resolve() for p in extra.split(":") if p)
+
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+            return resolved
+        except ValueError:
+            continue
+
+    allowed = ", ".join(str(r) for r in roots)
+    raise PermissionError(
+        f"path '{user_path}' (-> {resolved}) escapes the configured workspace "
+        f"roots [{allowed}]. Set FORTRANSPIRE_WORKSPACE_EXTRA_ROOTS to widen "
+        "the allow-list, or FORTRANSPIRE_DISABLE_JAIL=1 to disable (stdio-only)."
+    )
 
 # CodeAgent is imported lazily inside ``_get_agent`` so the module can be
 # loaded by clients that only call the analyze / explain / doc / graph
@@ -72,7 +114,12 @@ def translate_kernel_gpu(filepath: str) -> str:
     from fortranspire.agent.translation_graph_phase1 import translation_app_phase1
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        safe_path = _jail(filepath)
+    except PermissionError as e:
+        return f"Erreur d'accès : {e}"
+
+    try:
+        with open(safe_path, 'r', encoding='utf-8') as f:
             code = f.read()
     except Exception as e:
         return f"Erreur de lecture : {e}"
@@ -123,7 +170,12 @@ def translate_kernel(filepath: str) -> str:
     from fortranspire.agent.translation_graph import translation_app
 
     try:
-        with open(filepath, 'r', encoding='utf-8') as f:
+        safe_path = _jail(filepath)
+    except PermissionError as e:
+        return f"Erreur d'accès : {e}"
+
+    try:
+        with open(safe_path, 'r', encoding='utf-8') as f:
             code = f.read()
     except Exception as e:
         return f"Erreur de lecture : {e}"
@@ -158,7 +210,12 @@ def profile_kernels(filepath: str) -> str:
     """
     from fortranspire.agent.translation_graph import performance_agent
 
-    state = {"fortran_filepath": filepath, "performance_metrics": {}}  # type: ignore
+    try:
+        safe_path = _jail(filepath)
+    except PermissionError as e:
+        return f"Erreur d'accès : {e}"
+
+    state = {"fortran_filepath": str(safe_path), "performance_metrics": {}}  # type: ignore
     result = performance_agent(state)
     return str(result["performance_metrics"])
 
@@ -203,12 +260,18 @@ def analyze_kernels(
     """
     from fortranspire.agent.analyze import main as analyze_main
 
+    try:
+        safe_path = _jail(path)
+        safe_sarif = _jail(sarif_out) if sarif_out else None
+    except PermissionError as e:
+        return f"analyze rc=2\nErreur d'accès : {e}"
+
     argv: list[str] = []
-    if sarif_out:
-        argv += ["--format", "sarif", "-o", sarif_out]
+    if safe_sarif:
+        argv += ["--format", "sarif", "-o", str(safe_sarif)]
     if no_toolchain_check:
         argv.append("--no-toolchain-check")
-    argv.append(path)
+    argv.append(str(safe_path))
 
     rc, text = _capture_main(analyze_main, argv)
     head = f"analyze rc={rc}\n"
@@ -231,7 +294,12 @@ def explain_port_cost(filepath: str) -> str:
     """
     from fortranspire.agent.explain import main as explain_main
 
-    rc, text = _capture_main(explain_main, [filepath])
+    try:
+        safe_path = _jail(filepath)
+    except PermissionError as e:
+        return f"explain rc=2\nErreur d'accès : {e}"
+
+    rc, text = _capture_main(explain_main, [str(safe_path)])
     return f"explain rc={rc}\n{text}"
 
 
@@ -249,10 +317,16 @@ def build_call_graph(path: str, out: str | None = None) -> str:
     """
     from fortranspire.agent.call_graph import main as graph_main
 
+    try:
+        safe_path = _jail(path)
+        safe_out = _jail(out) if out else None
+    except PermissionError as e:
+        return f"graph rc=2\nErreur d'accès : {e}"
+
     argv: list[str] = []
-    if out:
-        argv += ["-o", out]
-    argv.append(path)
+    if safe_out:
+        argv += ["-o", str(safe_out)]
+    argv.append(str(safe_path))
 
     rc, text = _capture_main(graph_main, argv)
     return f"graph rc={rc}\n{text}"
@@ -283,6 +357,12 @@ def generate_docs(
     """
     from fortranspire.agent.document import main as doc_main
 
+    try:
+        safe_path = _jail(path)
+        safe_outdir = _jail(output_dir) if output_dir else None
+    except PermissionError as e:
+        return f"doc rc=2\nErreur d'accès : {e}"
+
     argv: list[str] = []
     if not with_llm:
         argv.append("--no-llm")
@@ -290,9 +370,9 @@ def generate_docs(
         argv.append("--dry-run")
     if sphinx:
         argv.append("--sphinx")
-    if output_dir:
-        argv += ["--output", output_dir]
-    argv.append(path)
+    if safe_outdir:
+        argv += ["--output", str(safe_outdir)]
+    argv.append(str(safe_path))
 
     rc, text = _capture_main(doc_main, argv)
     return f"doc rc={rc}\n{text}"
@@ -340,6 +420,12 @@ def main() -> None:
         # stdio: stay silent on stdout (the client speaks JSON-RPC there).
         # FastMCP's banner is gated by FASTMCP_SHOW_SERVER_BANNER.
         os.environ.setdefault("FASTMCP_SHOW_SERVER_BANNER", "0")
+        # stdio mode: the IDE owns the subprocess lifecycle and the trust
+        # boundary is the local user. Disable the workspace jail by default
+        # so cross-project analysis (e.g. PHYEX under ~/PHYEX from a server
+        # installed elsewhere) works out of the box. Set
+        # FORTRANSPIRE_DISABLE_JAIL=0 explicitly to keep it on.
+        os.environ.setdefault("FORTRANSPIRE_DISABLE_JAIL", "1")
         mcp.run(transport="stdio")
         return
 

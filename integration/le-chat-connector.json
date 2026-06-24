@@ -3,7 +3,7 @@
 
   "name": "fortranspire",
   "display_name": "Fortran → GPU / JAX (HPC porting agent)",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "vendor": {
     "name": "Loïc Maurin",
     "email": "maurin.loic.ac@gmail.com",

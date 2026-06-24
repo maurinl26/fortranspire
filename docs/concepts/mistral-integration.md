@@ -48,7 +48,7 @@ etc.
 ### Run a transformation
 
 ```bash
-uv run agent-gpu path/to/kernel.f90
+fortranspire gpu path/to/kernel.f90
 ```
 
 The pipeline issues up to four LLM calls (~0.06 USD at Mistral-Large
@@ -95,7 +95,7 @@ clean.
 
 ## Path 3 — Agent as an MCP provider for Le Chat / Mistral Agents API
 
-The agent ships an MCP server (`run-mcp`) that publishes the
+The agent ships an MCP server (`fortranspire mcp`) that publishes the
 transformation tools (`translate_kernel_gpu`, `translate_kernel`,
 `profile_kernels`, `ask_agent`) over HTTP/SSE on port 8000. **Anything
 that speaks MCP can drive it** — Claude Desktop, Cursor, VS Code agents,
@@ -105,13 +105,13 @@ Mistral Le Chat, the Mistral Agents API.
 
 ```bash
 uv sync --extra mcp     # FastMCP + the [gpu] transformation stack
-uv run run-mcp          # listens on http://0.0.0.0:8000/sse
+fortranspire mcp          # listens on http://0.0.0.0:8000/sse
 ```
 
 Set `API_KEY` to require a bearer token on every request:
 
 ```bash
-API_KEY=$(openssl rand -hex 32) uv run run-mcp
+API_KEY=$(openssl rand -hex 32) fortranspire mcp
 ```
 
 ### Use from Le Chat (connector — beta)
@@ -181,8 +181,8 @@ invite-only; Mistral partner managers handle the onboarding).
 | Goal                                            | Command                                                         |
 | ----------------------------------------------- | --------------------------------------------------------------- |
 | Validate your API key                           | `curl -H "Authorization: Bearer $MISTRAL_API_KEY" https://api.mistral.ai/v1/models` |
-| Port a kernel (default models)                  | `uv run agent-gpu kernel.f90`                                   |
-| Use Codestral everywhere (cheapest)             | `MISTRAL_MODEL=codestral-latest uv run agent-gpu kernel.f90`    |
-| Run the MCP server with auth                    | `API_KEY=… uv run run-mcp`                                       |
+| Port a kernel (default models)                  | `fortranspire gpu kernel.f90`                                   |
+| Use Codestral everywhere (cheapest)             | `MISTRAL_MODEL=codestral-latest fortranspire gpu kernel.f90`    |
+| Run the MCP server with auth                    | `API_KEY=… fortranspire mcp`                                       |
 | Quick API smoke-test                            | `uv run python examples/mistral_agents_api_smoke_test.py --key $MISTRAL_API_KEY` |
 | Build the Apptainer analyze image (no LLM cost) | `apptainer build analyze.sif Apptainer.analyze`                 |

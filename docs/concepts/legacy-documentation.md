@@ -1,6 +1,6 @@
 # Documenting a legacy Fortran codebase
 
-`agent-doc` is a **standalone documentation generator** for legacy
+`fortranspire doc` is a **standalone documentation generator** for legacy
 Fortran 90 code. It can run completely outside the GPU porting pipeline —
 its only goal is to produce readable, structured documentation for codes
 that have lost their original authors.
@@ -25,19 +25,19 @@ Every routine is documented at **two levels** in a single LLM call:
 
 ```bash
 # Annotate every kernel in src/ with inline !> docstrings
-uv run agent-doc src/
+fortranspire doc src/
 
 # In addition, generate a Sphinx site under documentation/<project>/
-uv run agent-doc --sphinx src/
+fortranspire doc --sphinx src/
 
 # Sphinx site only — leave the source files alone
-uv run agent-doc --site-only src/
+fortranspire doc --site-only src/
 
 # Show what would be inserted, do not modify the source
-uv run agent-doc --dry-run src/kernel.f90
+fortranspire doc --dry-run src/kernel.f90
 
 # No LLM call — useful in CI / for offline runs / to verify the plumbing
-uv run agent-doc --no-llm src/
+fortranspire doc --no-llm src/
 ```
 
 The generated Sphinx site builds with:
@@ -70,7 +70,7 @@ subroutine update_vx(vx, sigma_xx, dx, nx, ny)
 ```
 
 The `@generated_by fortranspire` marker on the first line is the
-**idempotency anchor**. Re-running `agent-doc` detects the existing block,
+**idempotency anchor**. Re-running `fortranspire doc` detects the existing block,
 strips it, and emits a fresh one — your source file never accumulates
 duplicate documentation.
 
@@ -108,15 +108,15 @@ iterating on prompts.
 
 ## Pairing with the analyzer
 
-`agent-doc` and `agent-analyze` complement each other:
+`fortranspire doc` and `fortranspire analyze` complement each other:
 
-- `agent-analyze` answers *"is this code GPU-ready?"* — deterministic,
+- `fortranspire analyze` answers *"is this code GPU-ready?"* — deterministic,
   zero LLM, runs in CI.
-- `agent-doc` answers *"what does this code do?"* — LLM-driven,
+- `fortranspire doc` answers *"what does this code do?"* — LLM-driven,
   one-shot, run by the maintainer or as a release artifact.
 
 Run the analyzer first to surface the structural issues
-(`COMMON`, `SAVE`, missing `INTENT`); then run `agent-doc` to capture
+(`COMMON`, `SAVE`, missing `INTENT`); then run `fortranspire doc` to capture
 the *intent* the analyzer cannot guess.
 
 ## Limitations

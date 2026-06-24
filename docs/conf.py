@@ -19,7 +19,7 @@ try:
 
     release = _pkg_version("fortranspire")
 except Exception:  # pragma: no cover — fallback for unbuilt envs
-    release = "0.1.0"
+    release = "0.2.0"
 
 version = ".".join(release.split(".")[:2])
 

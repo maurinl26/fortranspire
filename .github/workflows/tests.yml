@@ -1,0 +1,93 @@
+name: Tests
+
+# JOSS "automated tests" criterion: run the pytest suite on every push and PR.
+# Two jobs: fast (no gfortran needed) on every event, slow (gfortran-driven
+# equivalence harness) gated to push events on main + manual dispatch to
+# keep PR turnaround fast.
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "ROADMAP.md"
+      - "paper.md"
+      - "paper.bib"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/draft-paper.yml"
+  pull_request:
+    paths-ignore:
+      - "docs/**"
+      - "README.md"
+      - "ROADMAP.md"
+      - "paper.md"
+      - "paper.bib"
+      - ".github/workflows/docs.yml"
+      - ".github/workflows/draft-paper.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fast:
+    name: pytest (fast — no gfortran)
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install fortranspire with [all,tests]
+        run: |
+          uv pip install --system -e '.[all,tests]'
+
+      - name: Run pytest (skip slow markers)
+        run: |
+          uv run --no-project pytest -m 'not slow' -ra --tb=short
+
+  slow:
+    name: pytest (equivalence harness — gfortran -fopenacc)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install gfortran (provides -fopenacc)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+
+      - uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install fortranspire with [all,tests]
+        run: |
+          uv pip install --system -e '.[all,tests]'
+
+      - name: Run slow equivalence harness
+        run: |
+          uv run --no-project pytest -m slow -ra --tb=short

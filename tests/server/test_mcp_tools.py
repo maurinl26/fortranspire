@@ -11,12 +11,18 @@ tool surface — if a tool gets dropped or renamed, this test fails.
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 from pathlib import Path
 
 import pytest
 
-from fortranspire.server import (
+# Disable the workspace jail for these tests — pytest's tmp_path lives
+# under /private/var/folders/... which is outside the workspace root,
+# and we exercise the tools on those fixture paths intentionally.
+os.environ["FORTRANSPIRE_DISABLE_JAIL"] = "1"
+
+from fortranspire.server import (  # noqa: E402  (env var must precede import)
     _capture_main,
     analyze_kernels,
     build_call_graph,

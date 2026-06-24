@@ -75,7 +75,7 @@ analyze-only mode. Pull in extras for the other agents:
 | *(none)*   | core: loki-ifs, NumPy, python-dotenv, LangGraph             | `fortranspire analyze` (CI / pre-commit)     |
 | `cpu`      | alias for "no extras" — discoverable for CI scripts         | Same as above, explicit                      |
 | `gpu`      | LangChain stack + Cython                                    | `fortranspire gpu` (Phase 1)                 |
-| `mcp`      | FastMCP + `[gpu]`                                           | `run-mcp` (HTTP/SSE server in IDEs / CI)     |
+| `mcp`      | FastMCP + `[gpu]`                                           | `fortranspire mcp` (HTTP/SSE server in IDEs / CI) |
 | `jax`      | JAX, Flax, Equinox                                          | `fortranspire translate` / Phase 2           |
 | `all`      | `[gpu]` + `[mcp]` + `[jax]`                                 | Full developer install                       |
 | `docs`     | Sphinx + Furo + MyST + extensions                           | Build this documentation site                |
@@ -97,7 +97,7 @@ uv sync --extra docs --extra tests
 
 ## Compiler detection
 
-`agent-analyze` probes `PATH` for a Fortran compiler at every run and
+`fortranspire analyze` probes `PATH` for a Fortran compiler at every run and
 reports its OpenACC capability. No flag is needed; disable with
 `--no-toolchain-check`:
 
@@ -131,8 +131,8 @@ Apptainer image from `apptainer.def`.
 ## Verifying the install
 
 ```bash
-uv run run-mcp --help
-uv run agent-gpu --help
+fortranspire mcp --help
+fortranspire gpu --help
 ```
 
 If both commands print their usage, you're ready. Continue to the

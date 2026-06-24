@@ -1,6 +1,6 @@
 # fortranspire — Roadmap
 
-_Last updated: 2026-06-22 (v0.1.3 published)_
+_Last updated: 2026-06-24 (v0.2.0 published)_
 
 This roadmap captures the **strategic direction**, the **near-term concrete
 work** tracked in GitHub issues, and the **deployment surfaces** the project

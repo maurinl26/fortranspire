@@ -25,20 +25,26 @@ brew --version
 # A Mistral API key — generate one at https://console.mistral.ai/api-keys
 # (Scale plan recommended; the Experiment free tier rate-limits you out
 # of multi-tool sessions in under a minute).
-echo $MISTRAL_API_KEY
+export MISTRAL_API_KEY="<your-key-here>"     # add to ~/.zshrc for persistence
+echo $MISTRAL_API_KEY                        # sanity check
 ```
 
 ## Step 1 — Install fortranspire and mistral-vibe
 
 ```bash
-uv tool install fortranspire          # installs the `fortranspire` console
-                                      # script in an isolated venv, on PATH
+uv tool install 'fortranspire[mcp]'   # console script + MCP server deps,
+                                      # isolated venv, binary on PATH
 brew install mistral-vibe             # `vibe` console script, brew-managed
 ```
 
-`uv tool install` is the recommended path: it avoids polluting any
-existing virtualenv and puts the `fortranspire` binary on your `PATH`.
-If you're already inside a project venv, `uv pip install fortranspire`
+> [!IMPORTANT]
+> The `[mcp]` extra is **required** for the stdio handshake — without
+> it, `fortranspire mcp --stdio` will start but crash on the first
+> tool call when vibe asks for `fastmcp`. If you already installed
+> `fortranspire` without the extra, re-run with
+> `uv tool install --reinstall 'fortranspire[mcp]'`.
+
+If you're already inside a project venv, `uv pip install 'fortranspire[mcp]'`
 works too.
 
 ## Step 2 — Register fortranspire in `~/.vibe/config.toml`
@@ -87,7 +93,7 @@ publicly on GitHub.
 ## Step 4 — Launch vibe and talk
 
 ```bash
-/opt/homebrew/opt/mistral-vibe/bin/vibe --trust
+vibe --trust       # brew adds vibe to PATH; on Intel Macs that's /usr/local, on Apple Silicon /opt/homebrew
 ```
 
 Then, in the interactive session, type:

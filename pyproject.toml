@@ -172,6 +172,14 @@ exclude = [
 packages = ["fortranspire"]
 
 [tool.pytest.ini_options]
+# Only collect our own tests. The Loki redistribution under vendor/
+# ships its own pytest suite that depends on a built Loki extension —
+# leave it to the upstream maintainers to run.
+testpaths = ["tests"]
+# Skip slow tests by default (they shell out to gfortran and run the
+# equivalence harness). CI re-enables them with `pytest -m slow` on the
+# tests.yml workflow's "slow" job. Local users can do the same.
+addopts = "-m 'not slow'"
 # Custom markers — registering them silences "PytestUnknownMarkWarning"
 # and lets users opt into / out of expensive checks (issue #45).
 markers = [

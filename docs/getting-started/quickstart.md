@@ -20,7 +20,7 @@ See [LLM endpoints](../concepts/llm-endpoints) for self-hosted alternatives.
 Pick a Fortran source — for example a 2-D finite-difference stencil:
 
 ```bash
-uv run agent-gpu path/to/kernel.f90
+fortranspire gpu path/to/kernel.f90
 ```
 
 The pipeline writes its results under `output/`:
@@ -41,7 +41,7 @@ A typical run consumes four LLM calls and about two minutes of wall-clock.
 ## 3. Run Phase 2 — Fortran → JAX (optional)
 
 ```bash
-uv run agent-pipeline path/to/kernel.f90 --to jax
+fortranspire translate path/to/kernel.f90 --to jax
 ```
 
 This produces a JAX translation under `output/jax/` that is JIT-compilable
@@ -50,12 +50,12 @@ and differentiable through `jax.grad` / `jax.vjp`.
 ## 4. Analyze-only mode (no LLM, CI hook)
 
 If you just want to know whether a Fortran file is GPU-ready — without
-spending tokens or rewriting anything — use `agent-analyze`:
+spending tokens or rewriting anything — use `fortranspire analyze`:
 
 ```bash
-uv run agent-analyze src/kernel.f90
-uv run agent-analyze --format sarif --output report.sarif src/
-uv run agent-analyze --fail-on warning src/   # CI-friendly exit code
+fortranspire analyze src/kernel.f90
+fortranspire analyze --format sarif --output report.sarif src/
+fortranspire analyze --fail-on warning src/   # CI-friendly exit code
 ```
 
 The analyzer runs only the deterministic Loki parser stage, detects nine
@@ -72,7 +72,7 @@ a lightweight HPC container (no CUDA, no NVIDIA HPC SDK) lives at
 ## 5. Use the MCP server from an IDE
 
 ```bash
-uv run run-mcp
+fortranspire mcp
 ```
 
 The server listens on `http://localhost:8000/sse` and exposes the

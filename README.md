@@ -10,6 +10,7 @@ HPC kernels to GPU (OpenACC) and differentiable JAX.**
 [![PyPI](https://img.shields.io/pypi/v/fortranspire.svg)](https://pypi.org/project/fortranspire/)
 [![MCP](https://img.shields.io/badge/MCP-Ready-green.svg)](https://modelcontextprotocol.io/)
 [![Documentation Status](https://readthedocs.org/projects/fortranspire/badge/?version=latest)](https://fortranspire.readthedocs.io/en/latest/?badge=latest)
+[![Tests](https://github.com/maurinl26/fortranspire/actions/workflows/tests.yml/badge.svg)](https://github.com/maurinl26/fortranspire/actions/workflows/tests.yml)
 [![JOSS draft](https://github.com/maurinl26/fortranspire/actions/workflows/draft-paper.yml/badge.svg)](https://github.com/maurinl26/fortranspire/actions/workflows/draft-paper.yml)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20792357.svg)](https://doi.org/10.5281/zenodo.20792357)
 [![Contributor Covenant](https://img.shields.io/badge/Contributor%20Covenant-2.1-4baaaa.svg)](CODE_OF_CONDUCT.md)
@@ -51,7 +52,7 @@ agent — and from CI.
 — **no port, no auth, the inference stays in EU.**
 
 ```bash
-uv tool install fortranspire          # console script on PATH, isolated venv
+uv tool install 'fortranspire[mcp]'   # console script + MCP server deps, isolated venv
 brew install mistral-vibe
 ```
 
@@ -87,7 +88,9 @@ tool and prints a port-cost table — routines, tokens, USD estimate,
 FORT00x risks — with **zero LLM tokens consumed by fortranspire**.
 
 Full walkthrough (PHYEX kernel triage → call-graph → Phase-1 OpenACC
-port) in [`docs/getting-started/with-mistral-vibe.md`](docs/getting-started/with-mistral-vibe.md).
+port) in [`docs/integrations/mistral-vibe.md`](docs/integrations/mistral-vibe.md).
+For a tighter 60-second smoke test, see
+[`docs/getting-started/with-mistral-vibe.md`](docs/getting-started/with-mistral-vibe.md).
 
 > [!NOTE]
 > **Why this matters.** The codebase stays on disk, Mistral codestral
@@ -199,6 +202,7 @@ uv pip install "fortranspire[all]"           # Phase 1 + Phase 2 + MCP
 git clone https://github.com/maurinl26/fortranspire
 cd fortranspire
 cp .env.example .env
+$EDITOR .env                    # replace the MISTRAL_API_KEY placeholder
 uv sync --extra all
 ```
 

@@ -376,7 +376,10 @@ deterministic Fortran AST analysis, Docker / docker-compose / Apptainer
 recipes, and the pivot from Azure to a sovereign Mistral endpoint
 (commit `ccfe221`). All of that is preserved under fortranspire 0.1.0.
 
-[Unreleased]: https://github.com/maurinl26/fortranspire/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/maurinl26/fortranspire/compare/v0.2.0...HEAD
+[0.2.0]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.2.0
+[0.1.3]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.3
+[0.1.2]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.2
 [0.1.1]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.1
 [0.1.0]:      https://github.com/maurinl26/fortranspire/releases/tag/v0.1.0
 [0.0.x]:      https://github.com/maurinl26/fortranspire/commits/v0.1.0/
