@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] — 2026-06-24
+
+Patch release: pre-JOSS-submission hardening. No API breaks; the only
+default-behaviour change is the security pass below.
+
+### Security
+
+- **`run_shell` MCP exposure is now opt-in** via the
+  `FORTRANSPIRE_ENABLE_SHELL=1` environment variable
+  (`fortranspire/tools/__init__.py`). The ReAct agent previously
+  shipped `run_shell(shell=True)` in `ALL_TOOLS`, reachable from the
+  `ask_agent` MCP tool — a path that would have exposed
+  unauthenticated remote shell execution on any HTTP-deployed MCP
+  server. Default-off closes the blast radius.
+- **MCP file/directory arguments are now jailed to the workspace
+  root** through a new `_jail()` helper in `fortranspire/server.py`,
+  applied across the seven file-accepting tools
+  (`translate_kernel_gpu`, `translate_kernel`, `profile_kernels`,
+  `analyze_kernels`, `explain_port_cost`, `build_call_graph`,
+  `generate_docs`). Resolves the directory listed in
+  `config.workspace_dir` plus the colon-separated extra roots in
+  `FORTRANSPIRE_WORKSPACE_EXTRA_ROOTS`. Auto-disabled in stdio mode
+  (the IDE owns the trust boundary); enforced by default in
+  HTTP/SSE mode. Override with `FORTRANSPIRE_DISABLE_JAIL=1`.
+
+### Added
+
+- **`.github/workflows/tests.yml`** — pytest runs on every push and
+  PR. Fast job (no gfortran) on a Python 3.11 / 3.12 matrix; slow
+  job (`gfortran -fopenacc` equivalence harness) on push and manual
+  dispatch. README now shows a Tests badge alongside the JOSS draft
+  one.
+- **JOSS draft paper musclé** then trimmed for concision: Related
+  Work section across three threads of prior art (deterministic
+  source-to-source compilers and stencil DSLs / monolithic neural
+  transpilers / agentic LLM workflows), Quality control section
+  describing the equivalence harness, Limitations and roadmap
+  section. Currently 1103 body words. The full pipeline architecture
+  (8-stage table, LLM intervention rationale, agent-loop motivation)
+  lives in `docs/concepts/architecture.md`.
+
+### Changed
+
+- **Repo reorganisation.** Paper artefacts moved from the root to
+  `paper/` (`paper/paper.md`, `paper/paper.bib`). Container artefacts
+  moved from the root to `containers/` (`containers/Dockerfile`,
+  `containers/Dockerfile.hpc`, `containers/apptainer.def`,
+  `containers/docker-compose.yml`). Two stray root-level markdown
+  files moved into the Sphinx tree: `OPTIMIZATION_REVIEW.md` →
+  `docs/concepts/jax-optimization.md` and `TUTORIAL_IDE.md` →
+  `docs/integrations/ide-interactive-mode.md`. The repo root now
+  holds only the five `.md` files (`README`, `ROADMAP`,
+  `CONTRIBUTING`, `CODE_OF_CONDUCT`, `SECURITY`) expected by GitHub /
+  OSSF conventions.
+- **`uv tool install` install instructions corrected to
+  `uv tool install 'fortranspire[mcp]'`** in README and
+  `docs/getting-started/with-mistral-vibe.md`. The `[mcp]` extra is
+  required for the stdio handshake; the previous instructions would
+  have produced a `fastmcp`-missing crash on the first vibe message.
+- **README walkthrough link** now points at the full PHYEX walkthrough
+  (`docs/integrations/mistral-vibe.md`) rather than the 60-second
+  quickstart, matching the link text.
+- **Hardcoded `/opt/homebrew` brew path removed** from the vibe
+  walkthrough — `vibe` is on `PATH` after `brew install`, which is
+  `/opt/homebrew` on Apple Silicon and `/usr/local` on Intel Macs.
+- **`agent-*` / `run-mcp` legacy CLI names swept out** of
+  `docs/getting-started/quickstart.md`,
+  `docs/getting-started/installation.md`,
+  `docs/concepts/legacy-documentation.md`, and
+  `docs/concepts/mistral-integration.md` in favour of the unified
+  `fortranspire <verb>` form.
+- **EU-regulation backing for "sovereign"** added to
+  `docs/concepts/llm-endpoints.md`: GDPR (Regulation (EU) 2016/679),
+  AI Act (Regulation (EU) 2024/1689), NIS2 Directive (Directive (EU)
+  2022/2555) cited with permanent EUR-Lex URLs. The term is now
+  used in the regulatory sense throughout the documentation.
+- **Paper tone pass.** Dropped marketing-flavoured phrasing
+  ("sovereign European", "leadership-class GPU-equipped
+  supercomputers", "minority partner", "keeping the engineer in the
+  loop", "in practice"); fixed the 6-vs-8-stage contradiction with
+  the README diagram; reworded the orphan self-reference at the end
+  of the agent-loop section; corrected the over-claim that all 11
+  patterns are covered by fixtures (only `wave_kernels` ships
+  today).
+- **Pytest default gate.** `pyproject.toml`
+  `[tool.pytest.ini_options]` now sets `testpaths = ["tests"]` (so
+  the Loki redistribution under `vendor/` is no longer collected)
+  and `addopts = "-m 'not slow'"` (so the slow gfortran-driven
+  equivalence harness is opt-in by default).
+
+### Removed
+
+- **`fortranspire/main.py`** — dead REPL entry point referencing
+  removed `CodeAgent` import path and a removed `config.ollama_base_url`
+  attribute; no caller, no test exercised it.
+- **`fortranspire/brain/<uuid>/scratch/`** — local Loki-introspection
+  experiments that were accidentally shipped in the wheel.
+- **`Dockerfile.ci` and `Apptainer.analyze`** — referenced the
+  removed `local_code_agent/` path; replaced by the consolidated
+  container files under `containers/`.
+- **Bibliography orphans** dropped from `paper/paper.bib`:
+  `@clausecker2018claw`, `@gpufort2023`, `@gfortran`, `@flang`,
+  `@langgraph2024`. Their content moved to
+  `docs/concepts/architecture.md` (plain-text mentions, not bibtex
+  citations).
+
+### Fixed
+
+- **`codemeta.json` version field** synchronised to the actual
+  release version (was stuck at `0.1.3` after the 0.2.0 cut).
+- **`integration/le-chat-connector.json` connector version**
+  synchronised to 0.2.0 / 0.2.1.
+- **`docs/conf.py` Sphinx release fallback** for unbuilt envs:
+  `0.1.0` → `0.2.1`.
+- **Dangling reference labels** in `docs/changelog.md`: added the
+  `[0.1.2]` / `[0.1.3]` / `[0.2.0]` link definitions and bumped the
+  `[Unreleased]` compare base from `v0.1.1` to the current release.
+
 ## [0.2.0] — 2026-06-24
 
 Minor release. Mistral-vibe becomes a first-class integration surface

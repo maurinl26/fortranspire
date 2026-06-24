@@ -40,16 +40,18 @@ license: Apache-2.0
 license-url: "https://www.apache.org/licenses/LICENSE-2.0"
 repository-code: "https://github.com/maurinl26/fortranspire"
 url: "https://github.com/maurinl26/fortranspire"
-version: "0.2.0"
+version: "0.2.1"
 date-released: "2026-06-24"
 # Top-level DOI points at the Zenodo *concept* (parent) — stable across
-# releases. The per-version DOI is in the identifiers list below.
+# releases. The per-version DOI is in the identifiers list below; the
+# v0.2.1 version DOI is appended once Zenodo finishes processing the
+# v0.2.1 GitHub Release.
 doi: "10.5281/zenodo.20792357"
 identifiers:
   - description: "Zenodo concept DOI (resolves to the latest fortranspire release)"
     type: doi
     value: "10.5281/zenodo.20792357"
-  - description: "Zenodo version DOI for fortranspire v0.2.0 specifically"
+  - description: "Zenodo version DOI for fortranspire v0.2.0"
     type: doi
     value: "10.5281/zenodo.20826818"
   - description: "Latest GitHub release"
