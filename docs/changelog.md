@@ -7,21 +7,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-06-24
+
+Minor release. Mistral-vibe becomes a first-class integration surface
+alongside Claude Code, with end-to-end stdio support proven on real
+Météo-France PHYEX kernels.
+
 ### Added
 
-- **Equivalence harness on real kernels** (issue #45). New test suite at
+- **`fortranspire mcp --stdio` transport** (issue #39). The MCP server
+  now speaks the JSON-RPC stdio framing in addition to SSE. mistral-vibe
+  and Claude Code Desktop can spawn it as a subprocess — no port, no
+  auth middleware, local-by-construction. `MISTRAL_API_KEY` is
+  propagated to the spawned process via the host's `[mcp_servers.env]`
+  block in `~/.vibe/config.toml`.
+- **Stdio smoke test** at `tests/server/test_mcp_stdio.py` —
+  pytest-driven `initialize` → `notifications/initialized` →
+  `tools/list` handshake against the installed console script; asserts
+  the 9-tool surface intact.
+- **Equivalence harness on real kernels** (issue #45). Test suite at
   `tests/test_equivalence_real_kernels.py` and fixture directory at
-  `tests/fixtures/equivalence/<kernel>/` (containing `original.f90`,
-  `openacc.f90`, `driver.f90`, `TOLERANCE.md`). For each kernel, the
-  harness compiles both the serial and OpenACC variants with `gfortran`
-  (the OpenACC one via `gfortran -fopenacc`), runs both binaries on a
-  deterministic input, and asserts `np.allclose` within a per-kernel
-  tolerance documented in `TOLERANCE.md`. First kernel landed:
-  `wave_kernels` (two 2D FD stencils, 20 time-steps). Tests are
-  marked `slow` and skip when gfortran is not in PATH. The harness's
-  failure message reports max abs diff, the worst-case probe index,
-  and both values — the regression diagnostic spelled out in #45 §E.
+  `tests/fixtures/equivalence/<kernel>/` (`original.f90`, `openacc.f90`,
+  `driver.f90`, `TOLERANCE.md`). For each kernel, the harness compiles
+  both the serial and OpenACC variants with `gfortran` (the OpenACC one
+  via `gfortran -fopenacc`), runs both binaries on a deterministic
+  input, and asserts `np.allclose` within a per-kernel tolerance. First
+  kernel landed: `wave_kernels` (two 2D FD stencils, 20 time-steps).
+  Tests are marked `slow` and skip when gfortran is not in PATH.
 - **PEP 735 marker registration** for `slow` in `[tool.pytest.ini_options]`.
+- **PHYEX walkthrough** in `docs/integrations/mistral-vibe.md` — guided
+  3-step demo (triage → call-graph → Phase-1 port) on
+  `src/common/turb/mode_compute_function_thermo.F90`. Validates the
+  end-to-end natural-language flow on a real Météo-France kernel.
+- **`docs/getting-started/with-mistral-vibe.md`** — 60-second quickstart
+  page for readers coming from LinkedIn / external announcements.
+
+### Changed
+
+- Mistral-vibe integration documentation rewritten around the stdio
+  transport (recommended path). HTTP/SSE moved to "alternative" section
+  with LaunchAgent template for permanent-service deployments.
+- README promotes the mistral-vibe quick-start above the architectural
+  detail (better signal for first-time visitors).
 
 ## [0.1.3] — 2026-06-22
 

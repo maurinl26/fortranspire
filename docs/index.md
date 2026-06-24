@@ -24,6 +24,7 @@ Cursor, VS Code, Mistral Le Chat connectors) or any CI runner.
 :maxdepth: 2
 :caption: Getting started
 
+getting-started/with-mistral-vibe
 getting-started/installation
 getting-started/quickstart
 getting-started/configuration

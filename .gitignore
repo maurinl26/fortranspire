@@ -22,6 +22,10 @@ __pycache__/
 *.mod
 *.so
 
-# 
+#
 output/
 loki/
+
+# Sphinx build artefacts
+docs/_build/
+docs/api/_generated/

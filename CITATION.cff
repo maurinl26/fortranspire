@@ -7,7 +7,7 @@ authors:
     family-names: "Maurin"
     email: "maurin.loic.ac@gmail.com"
     orcid: "https://orcid.org/0009-0004-8117-4850"
-    affiliation: "External Lecturer, École Nationale de la Météorologie, Toulouse, France"
+    affiliation: "Independent Researcher, Toulouse, France"
 abstract: >-
   fortranspire is an open-source Model Context Protocol (MCP) server and
   command-line agent that incrementally transforms legacy Fortran 90
@@ -55,7 +55,7 @@ preferred-citation:
     - given-names: "Loïc"
       family-names: "Maurin"
       orcid: "https://orcid.org/0009-0004-8117-4850"
-      affiliation: "External Lecturer, École Nationale de la Météorologie, Toulouse, France"
+      affiliation: "Independent Researcher, Toulouse, France"
   journal: "Journal of Open Source Software"
   year: 2026
   # doi: "10.21105/joss.XXXXX"   # uncomment once JOSS assigns the DOI

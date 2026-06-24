@@ -71,7 +71,7 @@ Commands:
   port-batch  Parallel Phase 1 port across many files
   translate   Phase 2: Fortran → JAX (experimental)
   profile     Performance benchmarking
-  mcp         Run the MCP server (HTTP/SSE)
+  mcp         Run the MCP server (default HTTP/SSE; --stdio for vibe / Claude Desktop)
 
 Legacy aliases (deprecated, removed in 0.3):
   agent-analyze, agent-doc, agent-explain, agent-format, agent-gpu,

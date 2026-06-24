@@ -11,4 +11,4 @@ explain, format, graph, diff, report, bench, gpu, port-batch, translate,
 profile, mcp). See ``fortranspire --help`` for usage.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.2.0"

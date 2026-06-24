@@ -325,7 +325,24 @@ def _install_auth(mcp_instance) -> None:
 
 
 def main() -> None:
-    """Console entry point — `run-mcp`."""
+    """Console entry point — ``fortranspire mcp``.
+
+    Default transport is SSE on ``$MCP_HOST:$MCP_PORT`` (network-exposed,
+    auth-able). Pass ``--stdio`` to speak the stdio JSON-RPC framing
+    instead — the mode mistral-vibe and Claude Code Desktop spawn locally
+    when they own the server lifecycle. stdio is local-by-construction
+    (stdin/stdout only), so the HTTP auth middleware is skipped.
+    """
+    import sys
+
+    argv = sys.argv[1:]
+    if "--stdio" in argv or os.getenv("FORTRANSPIRE_MCP_STDIO") == "1":
+        # stdio: stay silent on stdout (the client speaks JSON-RPC there).
+        # FastMCP's banner is gated by FASTMCP_SHOW_SERVER_BANNER.
+        os.environ.setdefault("FASTMCP_SHOW_SERVER_BANNER", "0")
+        mcp.run(transport="stdio")
+        return
+
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
     _install_auth(mcp)

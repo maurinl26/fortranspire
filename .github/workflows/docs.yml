@@ -1,0 +1,80 @@
+name: Docs build (Sphinx)
+
+# CI sanity check for the Sphinx site. Read the Docs remains the
+# production deployment surface (configured via .readthedocs.yaml +
+# the RTD webhook on push to main). This workflow catches Sphinx /
+# myst-parser / cross-reference errors before RTD even tries to
+# build, so broken docs fail the PR rather than fail RTD silently.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "pyproject.toml"
+      - ".readthedocs.yaml"
+      - ".github/workflows/docs.yml"
+  pull_request:
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "pyproject.toml"
+      - ".readthedocs.yaml"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    name: Build Sphinx HTML
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install docs dependencies
+        run: |
+          uv pip install --system -r docs/requirements.txt
+          # The package itself is installed too, so autodoc resolves
+          # `fortranspire.*` symbols (mirrors what RTD does).
+          uv pip install --system .
+
+      # ``--nitpicky`` surfaces broken cross-references; ``--keep-going``
+      # lets the build complete so we still get an artifact for review.
+      # We do NOT pass ``--fail-on-warning`` yet — the autosummary
+      # generation under ``docs/api/_generated/`` carries pre-0.2.0
+      # stale references that need a dedicated cleanup pass. Mirrors
+      # ``fail_on_warning: false`` in ``.readthedocs.yaml``. Tighten
+      # this once the API doc tree is regenerated cleanly.
+      - name: Sphinx build (HTML)
+        run: |
+          sphinx-build \
+            --builder html \
+            --nitpicky \
+            --keep-going \
+            docs docs/_build/html
+
+      - name: Upload built site as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docs-html
+          path: docs/_build/html
+          if-no-files-found: error
+          retention-days: 14

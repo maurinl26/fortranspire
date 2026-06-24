@@ -17,9 +17,9 @@ authors:
     affiliation: 1
     corresponding: true
 affiliations:
-  - name: External Lecturer, École Nationale de la Météorologie, Toulouse, France
+  - name: Independent Researcher, Toulouse, France
     index: 1
-date: 21 June 2026
+date: 24 June 2026
 bibliography: paper.bib
 ---
 
@@ -29,7 +29,7 @@ bibliography: paper.bib
 legacy Fortran scientific code into GPU-accelerated, Python-callable, and
 optionally differentiable form. It combines deterministic abstract-syntax-tree
 (AST) analysis with targeted Large Language Model (LLM) calls, exposed
-through a Model Context Protocol (MCP) [@mcp2024] server so that the pipeline
+through a Model Context Protocol (MCP) [@mcp2024] server so the pipeline
 can be driven from an editor, a notebook, or a continuous-integration job.
 
 A single invocation takes a Fortran 90 source file and produces (i) an
@@ -84,9 +84,9 @@ human expert would perform, while keeping the engineer in the loop:
    `iso_c_binding`; deterministic compilation with `gfortran` (twice, for
    two compiler flavors) and `nvfortran -acc` validates the output.
 
-A typical run consumes four LLM calls (~2 minutes wall-clock, ~0.06 USD in
-Mistral-Large tokens) and produces a kernel that compiles for GPU and is
-importable from Python.
+A typical run consumes four LLM calls (~2 minutes wall-clock, ~0.04 USD on
+Mistral `codestral-latest` or ~0.06 USD on Mistral-Large) and produces a
+kernel that compiles for GPU and is importable from Python.
 
 To our knowledge no other open-source tool combines deterministic Fortran
 AST transformation, LLM-driven kernel refactoring, GPU pragma insertion,
@@ -99,7 +99,7 @@ back-end. `fortranspire` glues these together with an LLM acting as the
 "semantic glue" exactly where deterministic rules fall short.
 
 The MCP server makes the pipeline addressable from any MCP-aware client
-(Claude Desktop, Cursor, VS Code agents, Mistral Le Chat connectors), so
+(Claude Code, Claude Desktop, Cursor, mistral-vibe, VS Code agents), so
 researchers can port a kernel without leaving their editor. The same code
 runs unchanged in a CI job, an Apptainer container on an HPC login node, or
 a sovereign-EU cloud VM, addressing the data-residency constraints common
@@ -107,24 +107,94 @@ in industrial R&D.
 
 # Functionality
 
-The package exposes both a CLI (`agent-gpu`, `agent-pipeline`,
-`agent-translate`, `agent-profile`) and an MCP server (`run-mcp`) that
-publishes the same operations as MCP tools (`translate_kernel_gpu`,
-`translate_kernel`, `profile_kernels`, `ask_agent`). All operations are
-file-in / file-out, write their intermediate results to `output/`, and emit
+The package exposes a unified CLI (`fortranspire <verb>` with subcommands
+`analyze`, `explain`, `graph`, `doc`, `gpu`, `translate`, `profile`, `mcp`
+and others) and an MCP server that publishes nine tools:
+`analyze_kernels`, `explain_port_cost`, `build_call_graph`, `generate_docs`
+(all four deterministic, no LLM call), `translate_kernel_gpu`,
+`translate_kernel`, `profile_kernels`, `ask_agent`, and `agent_status`.
+The MCP server supports both stdio (when the IDE owns the lifecycle) and
+HTTP/SSE (for permanent service deployments) transports. All operations
+are file-in / file-out, write intermediate results to `output/`, and emit
 a structured log of LLM calls and validation steps for auditability.
 
-Nine recurring Fortran patterns — `INTENT`, `SAVE`, `COMMON`, `POINTER`,
-implicit typing, fixed-form continuation, derived types, `MODULE PROCEDURE`
-interfaces, and module-private state — are documented in the README and
-covered by fixture kernels in the test suite. These patterns cover the
-overwhelming majority of legacy scientific Fortran encountered in seismic
-and atmospheric production codes.
+Eleven recurring Fortran patterns — `INTENT`, `COMMON` blocks, `SAVE`,
+`POINTER`, AoS → SoA + `collapse(2)`, stencil-vs-recurrence dependencies,
+`ELEMENTAL` + `!$acc routine seq`, explicit `KIND` types,
+`LOGICAL PARAMETER` flags → `#ifdef`, MPI halo exchange → GHEX (planned),
+and Fortran I/O → xarray/zarr + DLPack (planned) — are documented in the
+project documentation and covered by fixture kernels in the test suite.
+These patterns cover the overwhelming majority of legacy scientific
+Fortran encountered in seismic and atmospheric production codes.
+
+# Real-world demonstration
+
+The pipeline is exercised end-to-end against
+[PHYEX](https://github.com/UMR-CNRM/PHYEX), the public Météo-France
+physics-parameterisations package shared with Meso-NH, the AROME-France
+limited-area model, and other ACCORD-consortium NWP systems. On a Mac
+mini (Apple Silicon, 16 GB RAM), invoking
+`fortranspire_explain_port_cost` against
+`src/common/turb/mode_compute_function_thermo.F90` (119 lines, 1
+routine) from inside `mistral-vibe` returns the structural assessment
+in approximately two seconds, with no LLM tokens consumed by
+`fortranspire` itself (Loki AST only): 1 routine identified,
+0 structural risks, an estimated 13 800 input + output tokens for a
+full Phase-1 port, and an estimated cost of 0.04 USD on
+`codestral-latest`. The same file is then portable to OpenACC and
+Cython in a subsequent `translate_kernel_gpu` invocation.
+
+# Quality control
+
+Two test layers guard the pipeline. **Unit tests** (180+ pytest
+functions) cover Loki adapters, the LangGraph state-machine
+transitions, the MCP tool surface (a hand-rolled JSON-RPC handshake
+verifying the nine tools are discoverable over stdio), the structured
+CLI output formats (SARIF 2.1.0, Markdown, JSON), and the
+deterministic stages independently of the LLM (using fixture inputs
+and recorded outputs). **End-to-end equivalence tests** compile both
+the original Fortran and the generated OpenACC variant with `gfortran`
+(the latter via `gfortran -fopenacc`), execute both binaries on a
+deterministic input, and assert `numpy.allclose` agreement within a
+per-kernel tolerance (typically `atol=1e-12, rtol=1e-10`). The
+diagnostic on failure reports the maximum absolute difference, the
+worst-case probe index, and both values, enabling regression
+attribution to a specific LLM stage. The first kernel covered is
+`wave_kernels` — two two-dimensional finite-difference stencils run
+for 20 time steps — and the harness is designed to accept additional
+kernels by dropping a directory containing `original.f90`,
+`openacc.f90`, `driver.f90`, and a documented tolerance into
+`tests/fixtures/equivalence/`.
+
+# Limitations and roadmap
+
+Three known limitations bound the present scope. **Validation
+dependencies.** Some production codes (PHYEX, IFS) depend on
+ECMWF-IFS-specific support modules (e.g., `YOMHOOK` for instrumentation)
+that are not vendored with the upstream public repositories; the
+pipeline still emits the transformed Fortran and Cython artefacts in
+those cases, but the final compilation gate against `nvfortran -acc` is
+skipped. **JAX translation (Phase 2) is experimental** and currently
+covers a subset of kernel shapes; complex time-loop patterns require
+manual rewriting toward `jax.lax.scan` with explicit carry. **Multi-node
+GPU communication** is on the roadmap — GHEX [@ghez2023] integration for
+GPU-to-GPU halo exchange replaces CPU-roundtrip MPI but is not yet
+implemented.
+
+Planned extensions include a GT4Py.next [@gt4pynext2024] code-generation
+target for stencil DSLs (relevant for ICON-LAM and finite-volume
+unstructured grids), a managed deployment on the European Weather Cloud
+via Morpheus / OpenStack to support data-residency-constrained users, and
+neural-surrogate training pipelines (Fourier neural operators
+[@li2020fourier], physics-informed neural networks [@raissi2019physics])
+that consume the GPU-ported kernels as the reference solver.
 
 # Acknowledgements
 
 We thank the ECMWF Loki team for the Fortran transformation toolkit that
-underpins the deterministic stages of this pipeline, and the open-source
+underpins the deterministic stages of this pipeline, the
+Université Mixte de Recherche CNRM (UMR 3589, Météo-France / CNRS) for
+publishing the PHYEX physics package under CeCILL-C, and the open-source
 communities behind OpenACC, JAX, Cython, LangChain/LangGraph, and the
 Model Context Protocol for the building blocks this work composes.
 

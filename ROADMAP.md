@@ -77,7 +77,7 @@ entry point for IDEs and agents. Today it deploys to:
 | Local Docker | Ready | [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) |
 | Apptainer (HPC sites) | Ready | [`apptainer.def`](apptainer.def), [`Apptainer.analyze`](Apptainer.analyze) |
 | Self-hosted vLLM / TGI / Ollama (LLM-side) | Ready | [`docs/concepts/llm-endpoints.md`](docs/concepts/llm-endpoints.md) |
-| Scaleway H100 (per-kernel GPU spin-up) | Planned — Tier-3 commercial | TBD |
+| Scaleway H100 (per-kernel GPU spin-up) | Planned | TBD |
 | European Weather Cloud (Morpheus) | Planned — [#43](https://github.com/maurinl26/fortranspire/issues/43) | [`docs/integrations/european-weather-cloud.md`](docs/integrations/european-weather-cloud.md) (TBD) |
 | OVHcloud GPU instances | Planned | TBD |
 
