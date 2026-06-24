@@ -340,7 +340,7 @@ Work in progress is tracked publicly on the
 ## 📬 Contact
 
 [Loïc Maurin](https://www.linkedin.com/in/lo%C3%AFc-maurin/) —
-External Lecturer, École Nationale de la Météorologie, Toulouse —
+Independent Researcher, Toulouse, France —
 ORCID [0009-0004-8117-4850](https://orcid.org/0009-0004-8117-4850).
 
 Email: [maurin.loic.ac@gmail.com](mailto:maurin.loic.ac@gmail.com) —

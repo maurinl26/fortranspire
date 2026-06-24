@@ -296,7 +296,7 @@ The release closed **19 issues** opened during the development sprint
 - **JOSS submission package** — `CONTRIBUTING.md`, `SECURITY.md`,
   `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1), `paper.md`,
   `paper.bib`, `.zenodo.json` (DOI metadata, ORCID
-  `0009-0004-8117-4850`, affiliation ENM Toulouse),
+  `0009-0004-8117-4850`, affiliation: Independent Researcher),
   `.readthedocs.yaml`, and `.github/workflows/draft-paper.yml` to
   render the JOSS draft PDF on every push.
 - **`CITATION.cff` + `codemeta.json`** at the repo root — GitHub
