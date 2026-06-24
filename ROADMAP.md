@@ -27,11 +27,11 @@ The architecture explicitly separates three concerns:
    structured outputs absorb ~60–70 % of the transformation work. This
    layer carries zero LLM risk.
 2. **LLM layer** — sovereign EU endpoint (Mistral La Plateforme by
-   default, self-hosted vLLM / TGI / Ollama / Scaleway / OVHcloud as
-   alternatives). The model choice is a runtime config, not a code
-   change.
+   default, self-hosted vLLM / TGI / Ollama on an OpenStack tenant
+   or on-prem cluster as alternatives). The model choice is a runtime
+   config, not a code change.
 3. **Deployment surface** — local Docker, on-prem Apptainer, EU sovereign
-   cloud (Scaleway H100, OVHcloud, European Weather Cloud). Always
+   cloud on an OpenStack tenant or the European Weather Cloud. Always
    user-owned compute; no hyperscaler dependency.
 
 This separation is what allows the same agent to be invoked from
@@ -77,7 +77,7 @@ entry point for IDEs and agents. Today it deploys to:
 | Local Docker | Ready | [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) |
 | Apptainer (HPC sites) | Ready | [`apptainer.def`](apptainer.def), [`Apptainer.analyze`](Apptainer.analyze) |
 | Self-hosted vLLM / TGI / Ollama (LLM-side) | Ready | [`docs/concepts/llm-endpoints.md`](docs/concepts/llm-endpoints.md) |
-| Scaleway H100 (per-kernel GPU spin-up) | Planned | TBD |
+| OpenStack-managed GPU tenant (per-kernel H100 spin-up) | Planned | TBD |
 | European Weather Cloud (Morpheus) | Planned — [#43](https://github.com/maurinl26/fortranspire/issues/43) | [`docs/integrations/european-weather-cloud.md`](docs/integrations/european-weather-cloud.md) (TBD) |
 | OVHcloud GPU instances | Planned | TBD |
 

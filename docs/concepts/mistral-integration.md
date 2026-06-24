@@ -6,10 +6,11 @@ same code paths work against:
 
 - **Mistral La Plateforme** (`https://api.mistral.ai/v1`) — sovereign EU
   hosting, the default.
-- **Self-hosted vLLM / TGI / Ollama** — full sovereignty, on Pangea, GENCI,
-  Scaleway, OVH, or any private datacenter.
-- **Mistral-compatible gateways** — Scaleway Generative APIs, OVH AI
-  Endpoints.
+- **Self-hosted vLLM / TGI / Ollama** — full sovereignty, on an OpenStack
+  tenant, an HPC site (GENCI Jean Zay, EuroHPC LUMI / MareNostrum), or
+  any private datacenter.
+- **EU OpenAI-compatible gateways** — any third-party gateway exposing
+  the `/chat/completions` schema and respecting EU data residency.
 
 **Azure is not part of the integration.** A previous version of the project
 proxied LLM calls through Azure OpenAI; this dependency was removed in
@@ -118,9 +119,9 @@ API_KEY=$(openssl rand -hex 32) uv run run-mcp
 Le Chat's connector directory is in beta. The mechanics:
 
 1. **Public endpoint** — Le Chat needs to reach your MCP server. Locally,
-   tunnel with `cloudflared` / `ngrok`; in production, deploy to a
-   sovereign EU host (Scaleway, OVH, on-prem OpenStack — see the
-   [deployment roadmap](https://github.com/maurinl26/fortranspire#-roadmap)).
+   tunnel with `cloudflared` / `ngrok`; in production, deploy on an
+   OpenStack tenant or on-prem cluster — see the
+   [deployment roadmap](https://github.com/maurinl26/fortranspire#-roadmap).
 2. **Manifest** — submit the connector descriptor. A draft is shipped in
    [`integration/le-chat-connector.json`](https://github.com/maurinl26/fortranspire/blob/main/integration/le-chat-connector.json),
    ready to send when the directory opens to general submissions.
@@ -166,8 +167,9 @@ and documented in [Le Chat connector](le-chat-connector).
 **Prerequisites before submission:**
 
 - A stable public MCP endpoint (HTTPS, valid certificate, monitored).
-  Today this means deploying on Scaleway, OVH or an OpenStack tenant — see
-  the [deployment roadmap](https://github.com/maurinl26/fortranspire#-roadmap).
+  Today this means deploying on an OpenStack tenant or an on-prem
+  cluster — see the
+  [deployment roadmap](https://github.com/maurinl26/fortranspire#-roadmap).
 - A privacy notice (the connector receives user-provided Fortran source).
 - A demo video / screenshots (a typical kernel transformation run).
 

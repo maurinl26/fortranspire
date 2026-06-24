@@ -35,8 +35,9 @@ output at `temperature=0`.
 
 ## C — Other compatible backends
 
-- **Scaleway Generative APIs** — EU-hosted, OpenAI-compatible, accepts the
-  same configuration as Mistral La Plateforme.
+- **EU OpenAI-compatible gateways on OpenStack tenants** — any
+  OpenAI-compatible endpoint hosted on an EU sovereign OpenStack
+  infrastructure accepts the same configuration as Mistral La Plateforme.
 - **OpenAI / Azure OpenAI** — works but defeats the sovereignty story and
   is therefore not the default. If you must, set `MISTRAL_ENDPOINT` to the
   appropriate URL and pick a chat-completions model.

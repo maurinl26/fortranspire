@@ -199,8 +199,8 @@ MISTRAL_API_KEY="<your-key-from-console.mistral.ai>"
 MISTRAL_MODEL="codestral-latest"             # default for code-gen stages
 ```
 
-For self-hosted inference (vLLM / TGI / Ollama / Scaleway Generative
-APIs / OVHcloud AI Endpoints), point `MISTRAL_ENDPOINT` at your
+For self-hosted inference (vLLM / TGI / Ollama on an OpenStack tenant
+or on-prem GPU cluster), point `MISTRAL_ENDPOINT` at your
 OpenAI-compatible server — see
 [`docs/concepts/llm-endpoints.md`](docs/concepts/llm-endpoints.md).
 

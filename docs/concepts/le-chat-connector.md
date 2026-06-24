@@ -34,9 +34,9 @@ Mistral expects connector operators to satisfy a baseline of operational
 hygiene. The current gap list:
 
 - [ ] **Public HTTPS endpoint** with valid certificate, reachable from
-      Le Chat's egress. Today this requires deploying the MCP server to
-      Scaleway, OVH, or an on-prem OpenStack tenant — see the deployment
-      roadmap in [README](https://github.com/maurinl26/fortranspire#-roadmap).
+      Le Chat's egress. Today this requires deploying the MCP server on
+      an OpenStack tenant or on-prem — see the deployment roadmap in
+      [README](https://github.com/maurinl26/fortranspire#-roadmap).
 - [ ] **Health check** at `/health` (already shipped — bypasses bearer
       auth so probes don't need credentials).
 - [ ] **Bearer auth enforced** (set `API_KEY` on the server; the
@@ -63,5 +63,5 @@ hygiene. The current gap list:
 
 - The agent's full Mistral integration story is in
   [Mistral integration](mistral-integration).
-- The OpenStack / Scaleway deployment recipes are tracked in the
+- The OpenStack deployment recipes are tracked in the
   [deployment roadmap](https://github.com/maurinl26/fortranspire#-roadmap).

@@ -244,7 +244,7 @@ The release closed **19 issues** opened during the development sprint
 - **Native `mistralai` SDK** auto-selected when the endpoint matches
   Mistral La Plateforme — gets first-class function calling, JSON
   mode, streaming, Mistral safety guards. Falls back gracefully to
-  `ChatOpenAI` for self-hosted vLLM / TGI / Ollama / Scaleway / OVH.
+  `ChatOpenAI` for self-hosted vLLM / TGI / Ollama on an OpenStack tenant.
   Override via `FORTRANSPIRE_LLM_BACKEND={mistral,openai}`.
 
 #### Equivalence harness (#11)

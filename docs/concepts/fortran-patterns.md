@@ -590,7 +590,7 @@ ds = xr.Dataset(
     attrs={"source_x": ISOURCE * DELTAX, "source_z": JSOURCE * DELTAY},
 )
 
-# Zarr write — compatible with object storage (S3, Scaleway, OVHcloud), Pangeo, Dask
+# Zarr write — compatible with S3-API object storage (Pangeo, Dask, OpenStack Swift)
 ds.to_zarr("s3://seismic-results/run_001.zarr", mode="w")
 
 # Read and visualise directly without conversion
@@ -603,7 +603,7 @@ ds["vx"].isel(time=100).hvplot(x="x", y="z", cmap="seismic")
 | Fortran source pattern | Phase 1 (Cython) | Phase 4 (xarray/zarr) |
 | ---------------------- | ---------------- | --------------------- |
 | `WRITE(unit,...) field(NX,NY)` | In-memory NumPy array | `xr.DataArray` with geo coords |
-| `OPEN / WRITE / CLOSE` `.dat` file | Python text file | Zarr dataset on object storage (S3 / Scaleway / OVHcloud) |
+| `OPEN / WRITE / CLOSE` `.dat` file | Python text file | Zarr dataset on S3-API object storage (e.g. OpenStack Swift) |
 | `.pnm` image file (PostScript) | `matplotlib.imshow` | Interactive hvPlot / GeoViews |
 | Per-receiver seismogram `.dat` | NumPy array | `xr.DataArray` indexed by receiver |
 | Snapshot every N steps | Accumulated 3D array | Streaming Zarr append |

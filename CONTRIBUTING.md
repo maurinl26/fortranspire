@@ -29,7 +29,7 @@ By participating, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md
   environment variables and documented in the README.
 - **Improve docs** — Sphinx sources live under `docs/`; the rendered site is
   published on Read the Docs.
-- **Help with deployment recipes** — devcontainer, OpenStack/Scaleway/OVH,
+- **Help with deployment recipes** — devcontainer, OpenStack tenants,
   Apptainer for HPC sites. See the
   [deployment roadmap section of the README](README.md).
 

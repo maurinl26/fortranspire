@@ -14,16 +14,16 @@ Two backends, selected automatically (override via ``FORTRANSPIRE_LLM_BACKEND``)
   ``mistralai`` Python SDK. Enables Mistral-native features: function
   calling, JSON-mode, streaming, Mistral-specific safety guardrails.
 - **``openai``** — uses ``langchain_openai.ChatOpenAI`` against an
-  OpenAI-compatible endpoint. Works against vLLM / TGI / Ollama / Scaleway
-  Generative APIs / OVH AI Endpoints / any other OpenAI-shaped server.
+  OpenAI-compatible endpoint. Works against vLLM / TGI / Ollama on an
+  OpenStack tenant, an HPC site, or any other OpenAI-shaped server.
 
 The legacy ``MISTRAL_MODEL`` env var still works as a single override for
 both roles, so existing ``.env`` files keep working unchanged.
 
 No hyperscaler dependency: the agent talks directly to the endpoint of
 your choice — Mistral La Plateforme, a self-hosted vLLM/TGI/Ollama
-server, or a sovereign-EU gateway (Scaleway Generative APIs, OVHcloud
-AI Endpoints, Outscale).
+server, or any sovereign-EU OpenAI-compatible gateway hosted on an
+OpenStack tenant or on-prem.
 """
 from __future__ import annotations
 

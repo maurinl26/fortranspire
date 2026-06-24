@@ -31,7 +31,7 @@ def test_resolve_backend_auto_picks_openai_for_self_hosted(
 ):
     monkeypatch.delenv("FORTRANSPIRE_LLM_BACKEND", raising=False)
     assert _resolve_backend("http://my-vllm-host:8000/v1") == "openai"
-    assert _resolve_backend("https://generative-api.scaleway.com/v1") == "openai"
+    assert _resolve_backend("https://llm.openstack-tenant.example.eu/v1") == "openai"
 
 
 @pytest.mark.parametrize("override,expected", [

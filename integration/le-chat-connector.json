@@ -97,7 +97,7 @@
   },
 
   "submission_checklist": [
-    "Public HTTPS MCP endpoint reachable from Le Chat (Scaleway / OVH / on-prem OpenStack)",
+    "Public HTTPS MCP endpoint reachable from Le Chat (OpenStack tenant or on-prem)",
     "Bearer auth enabled (API_KEY env var set on the server)",
     "Privacy notice published",
     "Demo video or screenshots of a sample kernel transformation",

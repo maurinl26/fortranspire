@@ -1,5 +1,5 @@
 # NVIDIA JAX base image — compatible with H100 / A100 GPU partitions
-# (Scaleway, OVHcloud, EuroHPC LUMI/MareNostrum, on-prem clusters)
+# (EuroHPC LUMI / MareNostrum, OpenStack-managed clusters, on-prem)
 FROM nvcr.io/nvidia/jax:24.03-py3
 
 ENV PYTHONUNBUFFERED=1
