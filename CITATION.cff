@@ -42,11 +42,16 @@ repository-code: "https://github.com/maurinl26/fortranspire"
 url: "https://github.com/maurinl26/fortranspire"
 version: "0.2.0"
 date-released: "2026-06-24"
+# Top-level DOI points at the Zenodo *concept* (parent) — stable across
+# releases. The per-version DOI is in the identifiers list below.
 doi: "10.5281/zenodo.20792357"
 identifiers:
-  - description: "Zenodo DOI for fortranspire v0.2.0"
+  - description: "Zenodo concept DOI (resolves to the latest fortranspire release)"
     type: doi
     value: "10.5281/zenodo.20792357"
+  - description: "Zenodo version DOI for fortranspire v0.2.0 specifically"
+    type: doi
+    value: "10.5281/zenodo.20826818"
   - description: "Latest GitHub release"
     type: url
     value: "https://github.com/maurinl26/fortranspire/releases/latest"
