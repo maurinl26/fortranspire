@@ -1,8 +1,8 @@
 services:
   agent:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..               # project root: lets the Dockerfile COPY pyproject.toml etc.
+      dockerfile: containers/Dockerfile
     container_name: fortranspire
     ports:
       - "8000:8000"         # Serveur MCP HTTP/SSE → Antigravity

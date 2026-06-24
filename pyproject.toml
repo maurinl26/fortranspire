@@ -163,9 +163,8 @@ exclude = [
     "vendor",
     ".github",
     "docs/build",
-    "Apptainer*",
-    "Dockerfile*",
-    "docker-compose*.yml",
+    "containers",
+    "paper",
 ]
 
 [tool.hatch.build.targets.wheel]

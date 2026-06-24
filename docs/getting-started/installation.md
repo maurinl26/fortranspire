@@ -118,15 +118,19 @@ Two new findings come from this check:
 
 ## Docker
 
-A multi-stage `Dockerfile` is shipped at the repo root and a compose file
-runs the MCP server on `http://localhost:8000`:
+A multi-stage `containers/Dockerfile` plus a compose file in the same
+directory run the MCP server on `http://localhost:8000`:
 
 ```bash
-docker compose up --build
+docker compose -f containers/docker-compose.yml up --build
 ```
 
-For HPC sites use `Dockerfile.hpc` (CUDA + NVIDIA HPC SDK) or build the
-Apptainer image from `apptainer.def`.
+For HPC sites use `containers/Dockerfile.hpc` (CUDA + NVIDIA HPC SDK)
+or build the Apptainer image from `containers/apptainer.def`:
+
+```bash
+apptainer build fortranspire.sif containers/apptainer.def
+```
 
 ## Verifying the install
 

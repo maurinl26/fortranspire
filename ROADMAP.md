@@ -12,7 +12,7 @@ targets. The technical phases are versioned independently in
 - **`fortranspire 0.1.3`** is live on [PyPI](https://pypi.org/project/fortranspire/) (single-step install).
 - **`loki-ifs 0.3.7`** — community PyPI redistribution of ECMWF Loki — is live on PyPI ([source](https://github.com/maurinl26/loki-ifs)).
 - **13 CLI verbs**, **9 MCP tools** (with [PR #40](https://github.com/maurinl26/fortranspire/pull/40) in flight), **234+ unit tests**.
-- **JOSS submission** in preparation — `paper.md`, `paper.bib`, `CITATION.cff`, `codemeta.json`, `.zenodo.json` all in place.
+- **JOSS submission** in preparation — `paper/paper.md`, `paper/paper.bib`, `CITATION.cff`, `codemeta.json`, `.zenodo.json` all in place.
 - **Sphinx documentation** published on [Read the Docs](https://fortranspire.readthedocs.io/).
 
 ## Strategic posture
@@ -74,8 +74,8 @@ entry point for IDEs and agents. Today it deploys to:
 
 | Surface | Status | Doc |
 | ------- | ------ | --- |
-| Local Docker | Ready | [`Dockerfile`](Dockerfile), [`docker-compose.yml`](docker-compose.yml) |
-| Apptainer (HPC sites) | Ready | [`apptainer.def`](apptainer.def), [`Apptainer.analyze`](Apptainer.analyze) |
+| Local Docker | Ready | [`containers/Dockerfile`](containers/Dockerfile), [`containers/docker-compose.yml`](containers/docker-compose.yml) |
+| Apptainer (HPC sites) | Ready | [`containers/apptainer.def`](containers/apptainer.def) |
 | Self-hosted vLLM / TGI / Ollama (LLM-side) | Ready | [`docs/concepts/llm-endpoints.md`](docs/concepts/llm-endpoints.md) |
 | OpenStack-managed GPU tenant (per-kernel H100 spin-up) | Planned | TBD |
 | European Weather Cloud (Morpheus) | Planned — [#43](https://github.com/maurinl26/fortranspire/issues/43) | [`docs/integrations/european-weather-cloud.md`](docs/integrations/european-weather-cloud.md) (TBD) |
@@ -83,8 +83,8 @@ entry point for IDEs and agents. Today it deploys to:
 
 ## JOSS / academic milestones
 
-- [x] `paper.md` drafted with [@joic-maurin](https://orcid.org/0009-0004-8117-4850) authorship
-- [x] `paper.bib` populated with Loki, OpenACC, GT4Py, JAX, Mistral references
+- [x] `paper/paper.md` drafted with [@joic-maurin](https://orcid.org/0009-0004-8117-4850) authorship
+- [x] `paper/paper.bib` populated with Loki, OpenACC, GT4Py, JAX, Mistral references
 - [x] `.zenodo.json` + `CITATION.cff` ready for DOI minting
 - [x] Read the Docs hosting active
 - [x] First Zenodo DOI minted — v0.2.0 archived as

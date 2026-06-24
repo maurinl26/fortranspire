@@ -39,13 +39,13 @@ and data-region pragmas, (iii) a Cython [@behnel2011cython] wrapper compiled
 through `scikit-build`, and (iv) on demand, a JAX [@jax2018github]
 translation of the same kernel that is differentiable and JIT-compilable by
 XLA. The AST stage uses Loki [@loki2024], the ECMWF Fortran transformation
-toolkit; the LLM stage uses any OpenAI-compatible endpoint, including the
-sovereign European Mistral API [@mistral2024], with Codestral
-[@codestral2024] selected by default for the code-generation stages and
-Mistral Large 2 [@mistrallarge2024] for the semantic reasoning stages.
-A self-hosted vLLM [@kwon2023efficient] / TGI / Ollama server is an
-equally supported alternative. The pipeline ships with container images
-(Docker, Apptainer) for HPC sites and reproducible local runs.
+toolkit; the LLM stage uses any OpenAI-compatible endpoint, including
+the Mistral API [@mistral2024], with Codestral [@codestral2024] selected
+by default for the code-generation stages and Mistral Large 2
+[@mistrallarge2024] for the semantic reasoning stages. A self-hosted
+vLLM [@kwon2023efficient] / TGI / Ollama server is an equally supported
+alternative. The pipeline ships with container images (Docker, Apptainer)
+for HPC sites and reproducible local runs.
 
 # Statement of need
 
@@ -59,17 +59,17 @@ accelerators sit underused because porting these codes by hand is slow
 combination of skills — Fortran 90, OpenACC, MPI, Cython, and modern
 Python packaging.
 
-This porting bottleneck has become the limiting factor for two adjacent
-research directions that depend on running the reference physics solver
-thousands of times: (1) generating training data for neural surrogates
-(Fourier neural operators [@li2020fourier], physics-informed neural
-networks [@raissi2019physics]) and (2) physics-aware validation of those
-surrogates during training. Both require the reference solver to be both
-fast (GPU) and callable from a Python machine-learning stack, which legacy
-Fortran does not natively support.
+Two research directions are bottlenecked by this porting cost: (1)
+generating training data for neural surrogates (Fourier neural
+operators [@li2020fourier], physics-informed neural networks
+[@raissi2019physics]) and (2) physics-aware validation of those
+surrogates during training. Both require the reference solver to be
+both fast (GPU) and callable from a Python machine-learning stack,
+which legacy Fortran does not natively support.
 
-`fortranspire` addresses this gap by automating the four transformations a
-human expert would perform, while keeping the engineer in the loop:
+`fortranspire` automates four transformations that a human expert
+performs by hand, writing each intermediate artefact to disk for
+review:
 
 1. **Parsing.** Loki extracts an AST and detects `COMMON` blocks, `SAVE`
    variables, implicit `INTENT`, and inline loops — fully deterministically.
@@ -86,23 +86,23 @@ human expert would perform, while keeping the engineer in the loop:
    `iso_c_binding`; deterministic compilation with `gfortran` (twice, for
    two compiler flavors) and `nvfortran -acc` validates the output.
 
-A typical run consumes four LLM calls (~2 minutes wall-clock, ~0.04 USD on
-Mistral `codestral-latest` or ~0.06 USD on Mistral-Large) and produces a
-kernel that compiles for GPU and is importable from Python.
+A run consumes four LLM calls (approximately 2 minutes wall-clock and
+0.04 USD on Mistral `codestral-latest`, or 0.06 USD on Mistral Large 2)
+and produces a kernel that compiles for GPU and is importable from
+Python.
 
 `fortranspire`'s contribution is the combination of deterministic AST
 transformation, LLM-driven semantic refactoring, GPU pragma insertion,
 Cython packaging, and optional JAX translation behind a single MCP
-interface; the related-work section below positions this against the
-three threads of prior art (deterministic source-to-source compilers,
+interface. The related-work section below compares this against three
+threads of prior art (deterministic source-to-source compilers,
 monolithic neural transpilers, and agentic LLM workflows).
 
 The MCP server makes the pipeline addressable from any MCP-aware client
-(Claude Code, Claude Desktop, Cursor, mistral-vibe, VS Code agents), so
-researchers can port a kernel without leaving their editor. The same code
-runs unchanged in a CI job, an Apptainer container on an HPC login node, or
-a sovereign-EU cloud VM, addressing the data-residency constraints common
-in industrial R&D.
+(Claude Code, Claude Desktop, Cursor, mistral-vibe, VS Code agents).
+The same code runs unchanged in a CI job, in an Apptainer container on
+an HPC login node, or in a cloud VM where the source code must remain
+on the user's infrastructure.
 
 # Related work
 
@@ -121,14 +121,13 @@ role inside the ECMWF IFS modernisation. A parallel line of work
 takes the *rewrite-in-a-Python-DSL* approach rather than transform
 Fortran in place: GT4Py [@paredes2023gt4py; @gt4pynext2024] (ETH
 Zürich CSCS) provides a Python-embedded stencil DSL targeting
-heterogeneous CPU–GPU architectures, used notably by Ubbiali et al.
-[@ubbiali2025cloudsc] to port the ECMWF CLOUDSC microphysics scheme
-across three leadership-class GPU-equipped supercomputers. These
-tools assume the input code is either already modular or that
-significant manual rewriting in the DSL is acceptable; they do not
-lift `COMMON` blocks, refactor `SAVE` state, or extract kernels from
-monolithic `PROGRAM`s — precisely the steps where LLM guidance
-contributes in `fortranspire`.
+heterogeneous CPU–GPU architectures, used by Ubbiali et al. [@ubbiali2025cloudsc] to port the ECMWF CLOUDSC
+microphysics scheme across three GPU-equipped HPC systems. These tools
+assume the input code is either already modular or that significant
+manual rewriting in the DSL is acceptable; they do not lift `COMMON`
+blocks, refactor `SAVE` state, or extract kernels from monolithic
+`PROGRAM`s — the steps where LLM guidance contributes in
+`fortranspire`.
 
 **Monolithic neural transpilers.** CodeRosetta
 [@tehranijamsaz2024coderosetta] is an encoder-decoder transformer
@@ -176,10 +175,10 @@ Eleven recurring Fortran patterns — `INTENT`, `COMMON` blocks, `SAVE`,
 `POINTER`, AoS → SoA + `collapse(2)`, stencil-vs-recurrence dependencies,
 `ELEMENTAL` + `!$acc routine seq`, explicit `KIND` types,
 `LOGICAL PARAMETER` flags → `#ifdef`, MPI halo exchange → GHEX (planned),
-and Fortran I/O → xarray/zarr + DLPack (planned) — are documented in the
-project documentation and covered by fixture kernels in the test suite.
-These patterns cover the overwhelming majority of legacy scientific
-Fortran encountered in seismic and atmospheric production codes.
+and Fortran I/O → xarray/zarr + DLPack (planned) — are documented in
+the project documentation. One end-to-end fixture (`wave_kernels`) is
+currently shipped under `tests/fixtures/equivalence/`; additional
+fixtures are planned to broaden coverage of the patterns listed above.
 
 ## Where the LLM intervenes (and where it does not)
 
@@ -187,9 +186,9 @@ Fortran 90/2003 is a structured domain: the grammar is closed and
 fully parseable, OpenACC is a versioned standard with a finite
 directive vocabulary, the `iso_c_binding` mapping between Fortran
 types and C is mechanical, and validation reduces to compiling with
-two reference toolchains. The bulk of the transformation work is
-therefore amenable to deterministic AST and template rules. Concretely,
-six of the eight pipeline stages are LLM-free:
+two reference toolchains. Most of the transformation work is therefore
+performed by deterministic AST and template rules — six of the eight
+pipeline stages are LLM-free:
 
 | Stage | Tool | LLM call? | What it does |
 | ----- | ---- | --------- | ------------- |
@@ -202,52 +201,46 @@ six of the eight pipeline stages are LLM-free:
 | 7. GPU validation | `nvfortran -acc` (or `flang` [@flang] on roadmap) | No | Compile the OpenACC variant for the target architecture |
 | 8. Equivalence | Test harness | No | Run both binaries on a deterministic input, assert `numpy.allclose` |
 
-The LLM is the *minority partner*: it intervenes only at the three
-semantic edges where deterministic rules cannot infer programmer
-intent. Stage 2 must decide what constitutes a kernel inside a
-five-thousand-line `PROGRAM` and how to expose its hidden state;
-stage 4 must place the `!$acc data` region at the temporal granularity
-that minimises host-device traffic without breaking the time-step
-dependency; stage 5 must map Fortran `OPTIONAL` arguments and array
-descriptors to a Cython interface that preserves the column-major
-NumPy view. These are the parts where a structured rule-based system
-would either fail (no closed-form rule covers the diversity of
-production codes) or require so many special cases that the rule base
-itself becomes a maintenance liability.
+LLM intervention is bounded to the three semantic edges where
+deterministic rules cannot infer programmer intent. Stage 2 must
+decide what constitutes a kernel inside a five-thousand-line
+`PROGRAM` and how to expose its hidden state; stage 4 must place the
+`!$acc data` region at the temporal granularity that minimises
+host-device traffic without breaking the time-step dependency;
+stage 5 must map Fortran `OPTIONAL` arguments and array descriptors
+to a Cython interface that preserves the column-major NumPy view.
+A structured rule-based system either fails on these tasks (no
+closed-form rule covers the diversity of production codes) or
+requires so many special cases that the rule base becomes a
+maintenance liability.
 
-Two distinct model roles are used in practice. The *reasoning* stage
-(kernel extraction, stage 2) benefits from a high-capability flagship
-model; we default to Mistral Large 2 [@mistrallarge2024]. The
-*code-generation* stages (OpenACC pragma insertion, Cython wrapping,
-docstring synthesis — stages 4 and 5) are well-served by a smaller
-code-specialised model with fill-in-the-middle training; we default
-to Codestral [@codestral2024]. Both run on Mistral La Plateforme
-[@mistral2024] and the role assignment is overridable through
-the `MISTRAL_MODEL_REASONING` and `MISTRAL_MODEL_CODE` environment
-variables, so practitioners running a self-hosted vLLM or another
-sovereign-EU endpoint can swap in any pair of OpenAI-compatible
-chat-completion models.
+The pipeline distinguishes two model roles. The *reasoning* role
+(kernel extraction, stage 2) defaults to Mistral Large 2
+[@mistrallarge2024]. The *code-generation* role (OpenACC pragma
+insertion, Cython wrapping, docstring synthesis — stages 4 and 5)
+defaults to Codestral [@codestral2024], a smaller code-specialised
+model with fill-in-the-middle training. Both models run on Mistral
+La Plateforme [@mistral2024]; the role assignment is overridable
+through the `MISTRAL_MODEL_REASONING` and `MISTRAL_MODEL_CODE`
+environment variables, allowing a self-hosted vLLM or any other
+OpenAI-compatible chat-completion endpoint to be substituted.
 
 ## Why an agent, not a one-shot prompt
 
-A structured domain still requires an agent — that is, a loop with
-state, validation, and retry — because the three LLM stages above are
-not statistically independent. A wrong kernel boundary at stage 2
+A single-shot LLM prompt is insufficient because the three LLM stages
+are not statistically independent. A wrong kernel boundary at stage 2
 propagates into wrong `!$acc data` clauses at stage 4 and an
 incompatible Cython signature at stage 5; a wrong OpenACC layout at
-stage 4 causes a `nvfortran -acc` failure at stage 7 that the LLM has
-no way to diagnose unless the compiler log is fed back into its
-context. `fortranspire` therefore orchestrates the eight stages with
-LangGraph [@langgraph2024]: each stage reads from and writes to a typed
-state dictionary, and the validation stages 6–8 can route the pipeline
-back to stage 4 (or 2) with the compiler log appended to the LLM
+stage 4 causes a `nvfortran -acc` failure at stage 7 that the LLM
+cannot diagnose unless the compiler log is fed back into its context.
+`fortranspire` therefore orchestrates the eight stages with LangGraph
+[@langgraph2024]: each stage reads from and writes to a typed state
+dictionary, and validation stages 6–8 can route the pipeline back to
+stage 4 (or stage 2) with the compiler log appended to the LLM
 context, capped at three retries to bound token spend. Intermediate
-artefacts are written to `output/` between stages so a human reviewer
-can inspect or hand-edit them and re-run from any checkpoint without
-re-issuing the upstream LLM calls. Together, the eight-stage typed
-state machine, the validation-driven retry loop, the deterministic
-majority, and the MCP exposure constitute the agent design that the
-title of this paper refers to.
+artefacts are written to `output/` between stages so a reviewer can
+inspect or hand-edit them and re-run from any checkpoint without
+re-issuing the upstream LLM calls.
 
 # Real-world demonstration
 
@@ -260,11 +253,11 @@ mini (Apple Silicon, 16 GB RAM), invoking
 `src/common/turb/mode_compute_function_thermo.F90` (119 lines, 1
 routine) from inside `mistral-vibe` returns the structural assessment
 in approximately two seconds, with no LLM tokens consumed by
-`fortranspire` itself (Loki AST only): 1 routine identified,
-0 structural risks, an estimated 13 800 input + output tokens for a
+`fortranspire` itself (Loki AST only): 1 routine identified, 0
+structural risks, an estimated 13 800 input + output tokens for a
 full Phase-1 port, and an estimated cost of 0.04 USD on
-`codestral-latest`. The same file is then portable to OpenACC and
-Cython in a subsequent `translate_kernel_gpu` invocation.
+`codestral-latest`. A subsequent call to `translate_kernel_gpu`
+runs the OpenACC and Cython stages on the same file.
 
 # Quality control
 

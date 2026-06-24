@@ -40,6 +40,7 @@ concepts/llm-endpoints
 concepts/mistral-integration
 concepts/le-chat-connector
 concepts/legacy-documentation
+concepts/jax-optimization
 ```
 
 ```{toctree}
@@ -48,6 +49,7 @@ concepts/legacy-documentation
 
 integrations/claude-code
 integrations/mistral-vibe
+integrations/ide-interactive-mode
 ```
 
 ```{toctree}

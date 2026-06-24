@@ -12,8 +12,7 @@ on:
       - "docs/**"
       - "README.md"
       - "ROADMAP.md"
-      - "paper.md"
-      - "paper.bib"
+      - "paper/**"
       - ".github/workflows/docs.yml"
       - ".github/workflows/draft-paper.yml"
   pull_request:
@@ -21,8 +20,7 @@ on:
       - "docs/**"
       - "README.md"
       - "ROADMAP.md"
-      - "paper.md"
-      - "paper.bib"
+      - "paper/**"
       - ".github/workflows/docs.yml"
       - ".github/workflows/draft-paper.yml"
   workflow_dispatch:

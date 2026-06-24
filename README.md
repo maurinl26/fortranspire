@@ -334,7 +334,7 @@ Work in progress is tracked publicly on the
 ## 📚 Documentation, citation, contribution
 
 - **Documentation**: [fortranspire.readthedocs.io](https://fortranspire.readthedocs.io/) (Sphinx)
-- **JOSS paper draft**: [`paper.md`](paper.md) — build via the
+- **JOSS paper draft**: [`paper/paper.md`](paper/paper.md) — build via the
   `draft-paper` GitHub Action
 - **Citation**: see [`CITATION.cff`](CITATION.cff) /
   [`codemeta.json`](codemeta.json) / [`.zenodo.json`](.zenodo.json).

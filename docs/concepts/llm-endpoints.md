@@ -4,6 +4,34 @@
 talks to a hyperscaler. The choice of endpoint is governed by your
 sovereignty requirements.
 
+## What "sovereignty" means here
+
+The term is used in the regulatory sense, not as a marketing label. The
+relevant European frameworks the choice of LLM endpoint interacts with:
+
+- **GDPR — Regulation (EU) 2016/679** ([eur-lex.europa.eu/eli/reg/2016/679](https://eur-lex.europa.eu/eli/reg/2016/679/oj))
+  — data processed by the LLM (including the source code of the
+  kernel being ported) is personal data when it identifies a natural
+  person, and falls under the controller / processor / cross-border
+  transfer rules of articles 28 and 44–49.
+- **EU AI Act — Regulation (EU) 2024/1689** ([eur-lex.europa.eu/eli/reg/2024/1689](https://eur-lex.europa.eu/eli/reg/2024/1689/oj))
+  — defines transparency, traceability, and conformity-assessment
+  obligations for general-purpose AI systems made available in the
+  EU, including third-party LLM API consumption.
+- **NIS2 Directive — Directive (EU) 2022/2555** ([eur-lex.europa.eu/eli/dir/2022/2555](https://eur-lex.europa.eu/eli/dir/2022/2555/oj))
+  — extends cybersecurity-incident-reporting obligations to research
+  computing, scientific software, and digital infrastructure
+  operators.
+
+A *sovereign* endpoint, in this document, means an LLM API whose
+processing location, contractual data-processor status, and audit
+trail demonstrably satisfy those three frameworks for an EU operator
+(public-sector R&D site, EU industrial R&D centre, EuroHPC user).
+Mistral La Plateforme and on-prem self-hosted endpoints meet that bar
+out of the box; US-hosted hyperscaler endpoints typically do not
+without supplementary contractual measures (Standard Contractual
+Clauses + Transfer Impact Assessment per GDPR art. 46).
+
 ## A — Mistral La Plateforme (EU-hosted, operated by Mistral AI)
 
 ```bash

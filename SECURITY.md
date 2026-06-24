@@ -48,9 +48,8 @@ In scope:
 
 - The Python package `fortranspire/`, including the MCP server,
   LangGraph pipelines, and CLI entry points.
-- Container images built from `Dockerfile`, `Dockerfile.ci`,
-  `Dockerfile.hpc`, and `apptainer.def`.
-- The deployment recipes under `infrastructure/` and `scripts/`.
+- Container images built from `containers/Dockerfile`,
+  `containers/Dockerfile.hpc`, and `containers/apptainer.def`.
 
 Out of scope:
 
