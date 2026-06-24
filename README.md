@@ -98,14 +98,25 @@ port) in [`docs/getting-started/with-mistral-vibe.md`](docs/getting-started/with
 
 ## 🎯 What this solves
 
-Legacy scientific HPC codes — IFS at ECMWF, ARPEGE and AROME at
-Météo-France, PHYEX at CNRM, SURFEX, seismic codes at the major energy
-research labs — total several million lines of Fortran 90 written
-between 1990 and 2010. They run on CPU clusters (BullSequana, Cray
-EX) while the GPU partitions of EuroHPC (LUMI, MareNostrum, Jean Zay)
-sit underused — not for lack of hardware, but for lack of ported code.
+Legacy scientific HPC codes total several million lines of Fortran 90
+written between 1990 and 2010 across the major European research
+institutions:
 
-A manual port of one PHYEX-class kernel to GPU takes a senior HPC
+- **Numerical weather prediction** — IFS at ECMWF, ARPEGE and AROME at
+  Météo-France, PHYEX at CNRM, SURFEX (the demo target used throughout
+  this documentation).
+- **Energy & defence physics** — `code_aster` and Code\_Saturne at EDF
+  (structural mechanics, CFD), neutron-transport and plasma-physics
+  codes at CEA (TRIPOLI, MCNP-style chains), reservoir simulators at
+  the major energy research labs.
+- **Geophysics** — seismic imaging (`seismic_CPML`, full-waveform
+  inversion frontends), oceanography (NEMO and forks).
+
+All of these run on CPU clusters (BullSequana, Cray EX) while the GPU
+partitions of EuroHPC (LUMI, MareNostrum, Jean Zay) sit underused —
+not for lack of hardware, but for lack of ported code.
+
+A manual port of one production-grade kernel to GPU takes a senior HPC
 engineer 2–6 weeks. The skill profile — Fortran 90 + OpenACC + Cython
 + numerics — is structurally rare in Europe, and the engineers who
 wrote these codes are retiring.
@@ -330,7 +341,8 @@ Work in progress is tracked publicly on the
 
 > [!IMPORTANT]
 > **Beta testers welcome.** If you maintain a Fortran legacy code
-> (weather, seismic, CFD, plasma) and a `.f90` file breaks the
+> (weather/climate, structural mechanics, CFD, plasma, seismic,
+> reactor physics, oceanography) and a `.f90` file breaks the
 > pipeline, please open an issue with the file attached — adding
 > fixture-driven coverage is the fastest path to making the pipeline
 > more robust.
@@ -345,7 +357,8 @@ ORCID [0009-0004-8117-4850](https://orcid.org/0009-0004-8117-4850).
 
 Email: [maurin.loic.ac@gmail.com](mailto:maurin.loic.ac@gmail.com) —
 for collaborations, JOSS-related questions, custom HPC porting
-missions on legacy Fortran codes, or self-hosted deployment
+missions on legacy Fortran codes (NWP, structural mechanics, CFD,
+plasma, reactor physics, seismic), or self-hosted deployment
 assistance.
 
 ---
