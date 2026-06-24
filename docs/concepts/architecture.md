@@ -67,6 +67,62 @@ so a reviewer can inspect (or hand-edit) the extracted module, the OpenACC
 driver, or the Cython wrapper between stages. Re-running the pipeline from
 an existing intermediate file skips the LLM call for that stage.
 
+## Where the LLM intervenes (and where it does not)
+
+Fortran 90/2003 is a structured domain: the grammar is closed and fully
+parseable, OpenACC is a versioned standard with a finite directive
+vocabulary, the `iso_c_binding` mapping between Fortran types and C is
+mechanical, and validation reduces to compiling with two reference
+toolchains. Most of the transformation work is therefore performed by
+deterministic AST and template rules — six of the eight pipeline stages
+are LLM-free:
+
+| Stage | Tool | LLM call? | What it does |
+| ----- | ---- | --------- | ------------- |
+| 1. Parse | Loki | No | AST extraction, `INTENT` / `SAVE` / `COMMON` detection, loop and I/O census |
+| 2. Extract | LLM | **Yes** | Lift kernels from monolithic `PROGRAM` into a `MODULE`; eliminate `COMMON`; surface `SAVE` as `INTENT(INOUT)` |
+| 3. Purity | AST rules | No | Annotate `PURE`/`ELEMENTAL` where legal (no I/O, no `SAVE`, explicit `INTENT`) |
+| 4. OpenACC | LLM | **Yes** | Insert `!$acc parallel loop collapse(...)` and `!$acc data copyin/copy` around the time loop |
+| 5. Cython | LLM (×2) | **Yes** | Generate `.pyx` with typed memoryviews and `iso_c_binding` header |
+| 6. CPU validation | `gfortran` | No | Compile original and OpenACC variants; assert syntactic correctness |
+| 7. GPU validation | `nvfortran -acc` (or `flang` on roadmap) | No | Compile the OpenACC variant for the target architecture |
+| 8. Equivalence | Test harness | No | Run both binaries on a deterministic input, assert `numpy.allclose` |
+
+LLM intervention is bounded to the three semantic edges where
+deterministic rules cannot infer programmer intent. Stage 2 must
+decide what constitutes a kernel inside a five-thousand-line
+`PROGRAM` and how to expose its hidden state; stage 4 must place the
+`!$acc data` region at the temporal granularity that minimises
+host-device traffic without breaking the time-step dependency;
+stage 5 must map Fortran `OPTIONAL` arguments and array descriptors
+to a Cython interface that preserves the column-major NumPy view. A
+structured rule-based system either fails on these tasks (no
+closed-form rule covers the diversity of production codes) or
+requires so many special cases that the rule base becomes a
+maintenance liability.
+
+The pipeline distinguishes two model roles. The *reasoning* role
+(kernel extraction, stage 2) defaults to Mistral Large 2. The
+*code-generation* role (OpenACC pragma insertion, Cython wrapping,
+docstring synthesis — stages 4 and 5) defaults to Codestral, a smaller
+code-specialised model with fill-in-the-middle training. The role
+assignment is overridable through the `MISTRAL_MODEL_REASONING` and
+`MISTRAL_MODEL_CODE` environment variables.
+
+## Why an agent, not a one-shot prompt
+
+A single-shot LLM prompt is insufficient because the three LLM stages
+are not statistically independent. A wrong kernel boundary at stage 2
+propagates into wrong `!$acc data` clauses at stage 4 and an
+incompatible Cython signature at stage 5; a wrong OpenACC layout at
+stage 4 causes a `nvfortran -acc` failure at stage 7 that the LLM
+cannot diagnose unless the compiler log is fed back into its context.
+`fortranspire` therefore orchestrates the eight stages with LangGraph:
+each stage reads from and writes to a typed state dictionary, and
+validation stages 6–8 can route the pipeline back to stage 4 (or
+stage 2) with the compiler log appended to the LLM context, capped at
+three retries to bound token spend.
+
 ## Why this sequence?
 
 The pipeline follows an **activation order** — each stage makes the next
