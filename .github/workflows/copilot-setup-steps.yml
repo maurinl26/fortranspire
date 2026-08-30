@@ -35,17 +35,25 @@ jobs:
         with:
           python-version: '3.12'
 
-      # Installed system-wide on purpose. The MCP configuration names the
-      # interpreter by absolute path because whether PATH changes made here
-      # are inherited by the process that launches MCP servers is not
-      # documented — `/usr/local/bin` is on PATH for anything on the runner.
+      # Installed into a dedicated venv at a fixed absolute path, which the
+      # MCP configuration names directly. Two reasons, both load-bearing:
+      #
+      #  * whether PATH changes made in setup steps are inherited by the
+      #    process that launches MCP servers is undocumented, so the config
+      #    must not rely on PATH;
+      #  * installing into the runner's Debian-managed system Python fails —
+      #    pip cannot uninstall distro-owned packages ("Cannot uninstall
+      #    typing_extensions ... RECORD file not found"). A venv owns its
+      #    own dependencies and sidesteps that entirely.
       #
       # No LLM extra: issue #49 exposes only the deterministic tools, so the
       # agent needs no API key and this install stays small.
       - name: Install fortranspire (deterministic tools only)
         run: |
           set -euo pipefail
-          sudo python3 -m pip install --break-system-packages --quiet fortranspire
-          ls -l /usr/local/bin/fortranspire
-          /usr/local/bin/fortranspire --help > /dev/null
+          sudo python3 -m venv /opt/fortranspire
+          sudo /opt/fortranspire/bin/pip install --quiet --upgrade pip
+          sudo /opt/fortranspire/bin/pip install --quiet fortranspire
+          ls -l /opt/fortranspire/bin/fortranspire
+          /opt/fortranspire/bin/fortranspire --help > /dev/null
           echo "fortranspire is installed and launchable."

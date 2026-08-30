@@ -136,6 +136,37 @@ def test_copilot_agent_exposes_no_token_spending_tool(copilot_agent):
     )
 
 
+def test_copilot_agent_command_matches_where_setup_installs_it(copilot_agent):
+    """The profile names an absolute path; the workflow must create it.
+
+    The config cannot rely on PATH (whether setup-step PATH changes reach
+    the process that launches MCP servers is undocumented), so the two
+    files agree on a literal path or the server never starts.
+    """
+    command = copilot_agent["mcp-servers"]["fortranspire"]["command"]
+    workflow = (ROOT / ".github/workflows/copilot-setup-steps.yml").read_text(
+        encoding="utf-8"
+    )
+    assert command in workflow, (
+        f"agent profile launches {command!r}, which copilot-setup-steps.yml "
+        "never installs"
+    )
+
+
+def test_copilot_setup_does_not_install_into_the_system_python(copilot_agent):
+    """Installing into the runner's Debian Python fails on distro packages.
+
+    `sudo pip install --break-system-packages` cannot uninstall a
+    distro-owned dependency ("Cannot uninstall typing_extensions ... RECORD
+    file not found") and the whole setup job exits 1.
+    """
+    workflow = (ROOT / ".github/workflows/copilot-setup-steps.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "--break-system-packages" not in workflow
+    assert "python3 -m venv" in workflow
+
+
 def test_copilot_agent_does_not_grant_edit_or_execute(copilot_agent):
     """The profile is analysis-only; it must not be able to rewrite Fortran."""
     granted = set(copilot_agent["tools"])

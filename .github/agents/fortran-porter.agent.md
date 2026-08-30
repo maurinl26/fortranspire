@@ -5,7 +5,7 @@ tools: ['read', 'search', 'fortranspire/*']
 mcp-servers:
   fortranspire:
     type: 'local'
-    command: '/usr/local/bin/fortranspire'
+    command: '/opt/fortranspire/bin/fortranspire'
     args: ['mcp', '--stdio']
     # Explicit allow-list, deliberately restricted to the three tools that
     # call no LLM, spend no token and write no file. Copilot invokes MCP

@@ -31,9 +31,13 @@ Three things about it are load-bearing:
   `timeout-minutes` (max 59) are honoured. Everything else is dropped
   without a warning.
 
-It installs system-wide, to `/usr/local/bin`, on purpose: whether `PATH`
-changes made in setup steps are inherited by the process that launches MCP
-servers is not documented, and an absolute path sidesteps the question.
+It installs into a dedicated venv at `/opt/fortranspire`, which the MCP
+configuration names by absolute path. Two reasons: whether `PATH` changes
+made in setup steps are inherited by the process that launches MCP servers
+is not documented, and installing into the runner's Debian-managed system
+Python simply fails — pip cannot uninstall distro-owned packages
+(`Cannot uninstall typing_extensions … RECORD file not found`). A venv owns
+its own dependencies and avoids both problems.
 
 ### 2. The MCP configuration
 
@@ -47,7 +51,7 @@ scoped to one custom agent:
 mcp-servers:
   fortranspire:
     type: 'local'
-    command: '/usr/local/bin/fortranspire'
+    command: '/opt/fortranspire/bin/fortranspire'
     args: ['mcp', '--stdio']
     tools: ['analyze_kernels', 'explain_port_cost', 'build_call_graph']
 ```
@@ -59,7 +63,7 @@ mcp-servers:
   "mcpServers": {
     "fortranspire": {
       "type": "local",
-      "command": "/usr/local/bin/fortranspire",
+      "command": "/opt/fortranspire/bin/fortranspire",
       "args": ["mcp", "--stdio"],
       "tools": ["analyze_kernels", "explain_port_cost", "build_call_graph"]
     }
