@@ -1,23 +1,25 @@
 name: Fortran static analysis
 
-# Runs the deterministic Loki-based parser on every PR and push.
-# No LLM is called, no token is consumed — safe on forks.
-# Findings are uploaded as SARIF and surface as inline PR annotations
-# via GitHub Code Scanning.
+# Dogfoods the reusable composite action published from this repo's root
+# `action.yml` (issue #47). Deterministic Loki analysis only — no LLM is
+# called, no token is consumed, no secret is needed, so it is safe on forks.
+# Findings surface as inline PR annotations via GitHub Code Scanning.
 
 on:
   pull_request:
     paths:
       - '**/*.f90'
       - '**/*.F90'
-      - 'local_code_agent/**'
+      - 'fortranspire/**'
+      - 'action.yml'
       - '.github/workflows/analyze.yml'
   push:
     branches: [main]
     paths:
       - '**/*.f90'
       - '**/*.F90'
-      - 'local_code_agent/**'
+      - 'fortranspire/**'
+      - 'action.yml'
       - '.github/workflows/analyze.yml'
   workflow_dispatch:
     inputs:
@@ -29,11 +31,11 @@ on:
 permissions:
   contents: read
   security-events: write   # required to upload SARIF
-  pull-requests: read
+  pull-requests: write     # required to post the port-cost comment
 
 jobs:
   analyze:
-    name: agent-analyze (Loki, no LLM)
+    name: fortranspire analyze (Loki, no LLM)
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -42,17 +44,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 2   # need HEAD~1 to diff changed files on PR
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
-        with:
-          enable-cache: true
-
-      - name: Set up Python 3.12
-        run: uv python install 3.12
-
-      - name: Install project (no LLM extras needed)
-        run: uv sync --no-dev
 
       - name: Pick paths to analyze
         id: paths
@@ -86,39 +77,17 @@ jobs:
           else
             echo "Changed Fortran files:"
             echo "$changed"
-            echo "targets<<EOF" >> "$GITHUB_OUTPUT"
-            echo "$changed" >> "$GITHUB_OUTPUT"
-            echo "EOF" >> "$GITHUB_OUTPUT"
+            # The action takes a space-separated list.
+            echo "targets=$(echo "$changed" | tr '\n' ' ')" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Run analyzer (text — console)
+      - name: fortranspire
         if: steps.paths.outputs.targets != ''
-        continue-on-error: true
-        run: |
-          # shellcheck disable=SC2086
-          uv run agent-analyze --no-color ${{ steps.paths.outputs.targets }}
-
-      - name: Run analyzer (SARIF — for Code Scanning)
-        if: steps.paths.outputs.targets != ''
-        run: |
-          # shellcheck disable=SC2086
-          uv run agent-analyze \
-            --format sarif \
-            --fail-on error \
-            --output fortranspire.sarif \
-            ${{ steps.paths.outputs.targets }}
-
-      - name: Upload SARIF to GitHub Code Scanning
-        if: always() && steps.paths.outputs.targets != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: ./
         with:
-          sarif_file: fortranspire.sarif
-          category: fortranspire
-
-      - name: Upload SARIF as build artifact
-        if: always() && steps.paths.outputs.targets != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: fortranspire-sarif
-          path: fortranspire.sarif
-          if-no-files-found: warn
+          path: ${{ steps.paths.outputs.targets }}
+          # Analyze the working tree, not the released wheel.
+          version: local
+          fail-on: error
+          comment: true
+          call-graph: true

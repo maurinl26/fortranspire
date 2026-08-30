@@ -37,6 +37,8 @@ agent — and from CI.
 - [📦 Installation](#-installation)
 - [🛠️ CLI usage](#️-cli-usage)
 - [🔌 IDE integrations](#-ide-integrations)
+- [🤖 GitHub Action (zero-token CI)](#-github-action-zero-token-ci)
+- [🕹️ Agent surfaces on GitHub](#️-agent-surfaces-on-github)
 - [🔬 Fortran patterns handled](#-fortran-patterns-handled)
 - [🗺️ Roadmap](#️-roadmap)
 - [📚 Documentation, citation, contribution](#-documentation-citation-contribution)
@@ -83,7 +85,7 @@ Launch vibe in a Fortran project and ask, in plain French or English:
 > *Donne-moi le coût estimé de portage GPU pour
 > `src/common/turb/mode_compute_function_thermo.F90`.*
 
-In ~2 seconds, vibe calls the `fortranspire_explain_port_cost` MCP
+In ~2 seconds, vibe calls the `explain_port_cost` MCP
 tool and prints a port-cost table — routines, tokens, USD estimate,
 FORT00x risks — with **zero LLM tokens consumed by fortranspire**.
 
@@ -288,6 +290,109 @@ Nine tools exposed by the server:
 | `profile_kernels` | Performance benchmarking | No |
 | `ask_agent` | Natural-language query against the codebase | Yes |
 | `agent_status` | Dump server config | No |
+
+---
+
+## 🤖 GitHub Action (zero-token CI)
+
+Add GPU-portability analysis to any Fortran repository in one `uses:`
+line. The action runs the **deterministic Loki path only** — no LLM, no
+API key, no token spend — so it is safe on pull requests from forks.
+
+```yaml
+# .github/workflows/fortran.yml
+name: Fortran analysis
+on: [pull_request]
+
+permissions:
+  contents: read
+  security-events: write   # to publish findings to Code Scanning
+  pull-requests: write     # only if you set `comment: true`
+
+jobs:
+  fortranspire:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maurinl26/fortranspire@v1
+        with:
+          path: src/
+          fail-on: error
+          comment: true      # post the port-cost report on the PR
+```
+
+What you get on every PR: **GPU-portability findings** (`FORT001`…) as
+inline Code Scanning annotations, a **port-cost estimate** in the job
+summary and optionally as a PR comment, and a **Mermaid call-graph** as
+a build artifact.
+
+<details>
+<summary>Inputs and outputs</summary>
+
+| Input | Default | Purpose |
+| ----- | ------- | ------- |
+| `path` | `.` | File or directory to analyze; space-separated for several |
+| `version` | `latest` | fortranspire version from PyPI — **pin this** in production |
+| `fail-on` | `error` | Severity that fails the build: `error`, `warning`, `note`, `none` |
+| `sarif` | `true` | Generate the SARIF report |
+| `upload-sarif` | `true` | Publish it to Code Scanning (needs `security-events: write`) |
+| `explain` | `true` | Produce the no-LLM port-cost estimate |
+| `call-graph` | `false` | Produce the Mermaid call-graph |
+| `summary` | `true` | Write the port-cost report to the job summary |
+| `comment` | `false` | Post the report as a PR comment (needs `pull-requests: write`) |
+| `working-directory` | `.` | Directory `path` is resolved against |
+| `python-version` | `3.12` | Python used to run the analyzer |
+| `artifact-name` | `fortranspire-reports` | Artifact name; must be unique per job |
+
+| Output | Purpose |
+| ------ | ------- |
+| `sarif-file` | Path to the SARIF report |
+| `json-file` | Path to the machine-readable findings JSON |
+| `report-file` | Path to the Markdown port-cost report |
+| `graph-file` | Path to the Mermaid call-graph |
+| `error-count` / `warning-count` / `finding-count` | Finding tallies |
+
+</details>
+
+> [!NOTE]
+> The gate runs **last**, so the SARIF, the job summary and the PR
+> comment are all published even when the build fails. To report without
+> ever failing the build, set `fail-on: none`.
+
+---
+
+## 🕹️ Agent surfaces on GitHub
+
+Four ways to reach the pipeline from GitHub, in increasing order of cost
+and trust. The dividing line is constant: **`explain` / `analyze` / `graph`
+never call an LLM, spend no token and need no secret; `port` / `doc` do all
+three.**
+
+| Surface | Trigger | Cost | Writes code? | Docs |
+| ------- | ------- | ---- | ------------ | ---- |
+| **Composite Action** | every pull request | free, no secret | no | [above](#-github-action-zero-token-ci) |
+| **Copilot cloud agent** | assign an issue to Copilot | free, no secret | no | [copilot-coding-agent](docs/integrations/copilot-coding-agent.md) |
+| **Claude Code Action** | `@fortranspire` in a PR comment | tokens | yes, to a branch | [claude-code-action](docs/integrations/claude-code-action.md) |
+| **GitHub App** | `/fortranspire <verb> <path>` | tokens | yes, opens a PR | [github-app](docs/integrations/github-app.md) |
+
+Start at the top. The composite Action needs one `uses:` line and gives a
+team GPU-portability findings and port-cost estimates on every PR before
+anyone decides whether an LLM port is worth paying for.
+
+The two token-spending surfaces both gate on **write access** before
+anything runs, and both keep the workspace jail on — `fortranspire mcp
+--stdio` turns it off by default for local IDE use, which is the wrong
+default when an agent is acting on a comment a third party wrote.
+
+```
+# On a pull request, as a maintainer:
+/fortranspire explain src/common/turb/mode_thermo.F90   # free, ~2 s
+/fortranspire port    src/common/turb/mode_thermo.F90   # spends tokens, opens a PR
+```
+
+The GitHub App refuses everything until an operator approves the
+installation, and `port` stays refused until that installation is opted in
+to token spending explicitly.
 
 ---
 

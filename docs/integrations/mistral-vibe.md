@@ -77,7 +77,7 @@ plain French/English. A typical "is this kernel portable?" session:
 > Regarde phyex/src/MNH/rain_ice.f90 et estime le coût d'un portage GPU.
 ```
 
-vibe will call `fortranspire_explain_port_cost`, then summarise the
+vibe will call `explain_port_cost`, then summarise the
 table it gets back — routine count, control-flow complexity, GPU
 portability score, expected token spend for a Phase-1 port. No source
 file leaves the process; only the rendered report flows to the model.
@@ -130,7 +130,7 @@ Then, in the vibe session, a guided three-step demo:
 > Lequel est portable tel quel ? Lequel demande un refactor d'abord ?
 ```
 
-vibe calls `fortranspire_explain_port_cost` sur chaque fichier. La
+vibe calls `explain_port_cost` sur chaque fichier. La
 sortie surface `FORT001 — I/O in kernel candidate` sur le second (un
 `PRINT` dans `TKE_EPS_SOURCES` qui bloque le port GPU), et un coût
 propre (~$0.01) sur le premier.
@@ -141,7 +141,7 @@ propre (~$0.01) sur le premier.
 > Dessine le call-graph de mode_compute_function_thermo.F90.
 ```
 
-`fortranspire_build_call_graph` rend un Mermaid `flowchart LR`
+`build_call_graph` rend un Mermaid `flowchart LR`
 embarquable directement dans une PR ou un mdBook.
 
 **3. Générer le wrapper OpenACC + Cython**
@@ -150,7 +150,7 @@ embarquable directement dans une PR ou un mdBook.
 > Génère le port OpenACC + Cython pour mode_compute_function_thermo.F90.
 ```
 
-`fortranspire_translate_kernel_gpu` enchaîne le pipeline Phase-1 et
+`translate_kernel_gpu` enchaîne le pipeline Phase-1 et
 écrit `output/fortran_gpu/*.f90` + `output/cython/*.pyx` à côté du
 `cwd`. vibe propose ensuite la compilation + validation via gfortran.
 

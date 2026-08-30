@@ -1,0 +1,51 @@
+name: Copilot Setup Steps
+
+# Issue #49 — provisions the GitHub Copilot cloud agent's environment so it
+# can launch the fortranspire MCP server.
+#
+# The job name is load-bearing: GitHub only picks up a job called
+# `copilot-setup-steps`, and only from the default branch. Renaming it
+# silently disables the whole thing.
+#
+# Only `steps`, `permissions`, `runs-on`, `services`, `snapshot` and
+# `timeout-minutes` (max 59) are honoured here — anything else is ignored.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+  pull_request:
+    paths:
+      - .github/workflows/copilot-setup-steps.yml
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Installed system-wide on purpose. The MCP configuration names the
+      # interpreter by absolute path because whether PATH changes made here
+      # are inherited by the process that launches MCP servers is not
+      # documented — `/usr/local/bin` is on PATH for anything on the runner.
+      #
+      # No LLM extra: issue #49 exposes only the deterministic tools, so the
+      # agent needs no API key and this install stays small.
+      - name: Install fortranspire (deterministic tools only)
+        run: |
+          set -euo pipefail
+          sudo python3 -m pip install --break-system-packages --quiet fortranspire
+          ls -l /usr/local/bin/fortranspire
+          /usr/local/bin/fortranspire --help > /dev/null
+          echo "fortranspire is installed and launchable."

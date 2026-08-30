@@ -38,11 +38,12 @@ def test_unknown_command_returns_2(capsys: pytest.CaptureFixture[str]):
 
 
 def test_dispatch_table_lists_expected_commands():
-    # 13 subcommands as of 0.1.0. Update this set when a new verb lands.
+    # 14 subcommands. Update this set when a new verb lands.
     expected = {
         "analyze", "doc", "explain", "format",
         "graph", "diff", "report", "bench",     # added during the 0.1.0 sprint
         "gpu", "port-batch", "translate", "profile", "mcp",
+        "github-app",                           # issue #50
     }
     assert set(_DISPATCH.keys()) == expected
 

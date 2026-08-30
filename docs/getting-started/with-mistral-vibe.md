@@ -105,7 +105,7 @@ Pas d'appel LLM côté fortranspire, juste l'estimation.
 ```
 
 Within 2 seconds, vibe routes the request to the
-`fortranspire_explain_port_cost` MCP tool and renders the table:
+`explain_port_cost` MCP tool and renders the table:
 
 ```
 • Fichiers analysés : 1/1 avec succès
@@ -130,7 +130,7 @@ Maintenant lance la Phase-1 GPU sur ce même fichier.
 Génère le wrapper OpenACC + Cython.
 ```
 
-That dispatches `fortranspire_translate_kernel_gpu` and ~$0.04 of
+That dispatches `translate_kernel_gpu` and ~$0.04 of
 codestral tokens later you have `output/fortran_gpu/kernel_pure.f90`,
 `output/fortran_gpu/kernel_gpu.f90`, and `output/cython/*.pyx` on disk.
 

@@ -1,0 +1,266 @@
+name: 'fortranspire — Fortran GPU-port analysis'
+description: >-
+  Deterministic Loki (ECMWF) static analysis of Fortran sources: GPU-portability
+  findings as SARIF, a port-cost estimate, and a Mermaid call-graph. No LLM, no
+  secret, no token spend — safe to run on forks.
+author: 'Loïc Maurin'
+branding:
+  icon: 'cpu'
+  color: 'blue'
+
+inputs:
+  path:
+    description: 'Fortran file or directory to analyze. Space-separated for several.'
+    required: false
+    default: '.'
+  version:
+    description: >-
+      fortranspire version to install from PyPI. Pin this in production
+      workflows; "latest" tracks the newest release. Use "local" to install
+      from the checked-out repository instead — that is how this repo
+      dogfoods the action against the code under review rather than against
+      the last published wheel.
+    required: false
+    default: 'latest'
+  fail-on:
+    description: >-
+      Lowest finding severity that fails the step: error | warning | note.
+      Use "none" to always succeed and only publish the report.
+    required: false
+    default: 'error'
+  sarif:
+    description: 'Emit SARIF for GitHub Code Scanning (true/false).'
+    required: false
+    default: 'true'
+  upload-sarif:
+    description: >-
+      Upload the SARIF to Code Scanning. Needs `permissions: security-events: write`.
+      Set false to keep the file as an artifact only.
+    required: false
+    default: 'true'
+  explain:
+    description: 'Also produce the no-LLM port-cost + risk estimate (true/false).'
+    required: false
+    default: 'true'
+  call-graph:
+    description: 'Also produce a Mermaid call-graph report (true/false).'
+    required: false
+    default: 'false'
+  summary:
+    description: 'Write the port-cost report to the GitHub job summary (true/false).'
+    required: false
+    default: 'true'
+  comment:
+    description: >-
+      Post the port-cost report as a pull-request comment. Needs
+      `permissions: pull-requests: write`. Ignored outside pull_request events.
+    required: false
+    default: 'false'
+  working-directory:
+    description: 'Directory to resolve `path` against.'
+    required: false
+    default: '.'
+  python-version:
+    description: 'Python version used to run the analyzer.'
+    required: false
+    default: '3.12'
+  artifact-name:
+    description: >-
+      Name of the uploaded reports artifact. Must be unique within a job —
+      override it when the action runs more than once. Set to an empty string
+      to skip the upload entirely.
+    required: false
+    default: 'fortranspire-reports'
+
+outputs:
+  sarif-file:
+    description: 'Path to the generated SARIF file (empty when sarif=false).'
+    value: ${{ steps.analyze.outputs.sarif-file }}
+  json-file:
+    description: 'Path to the machine-readable findings JSON.'
+    value: ${{ steps.analyze.outputs.json-file }}
+  report-file:
+    description: 'Path to the Markdown port-cost report (empty when explain=false).'
+    value: ${{ steps.explain.outputs.report-file }}
+  graph-file:
+    description: 'Path to the Mermaid call-graph report (empty when call-graph=false).'
+    value: ${{ steps.graph.outputs.graph-file }}
+  error-count:
+    description: 'Number of error-severity findings.'
+    value: ${{ steps.analyze.outputs.error-count }}
+  warning-count:
+    description: 'Number of warning-severity findings.'
+    value: ${{ steps.analyze.outputs.warning-count }}
+  finding-count:
+    description: 'Total number of findings across all severities.'
+    value: ${{ steps.analyze.outputs.finding-count }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    # No LLM extras: the analyze / explain / graph verbs are pure Loki AST
+    # work, so the install stays small and needs no API key.
+    - name: Install fortranspire (no LLM extras)
+      shell: bash
+      run: |
+        set -euo pipefail
+        case "${{ inputs.version }}" in
+          latest) python -m pip install --quiet --upgrade fortranspire ;;
+          local)  python -m pip install --quiet "${{ github.action_path }}" ;;
+          *)      python -m pip install --quiet "fortranspire==${{ inputs.version }}" ;;
+        esac
+        python -m pip show fortranspire | sed -n '1,2p'
+
+    - name: Analyze
+      id: analyze
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -uo pipefail
+        outdir="${RUNNER_TEMP}/fortranspire"
+        mkdir -p "$outdir"
+        json="${outdir}/findings.json"
+
+        # Always produce JSON — it is what the counts and the gate are read
+        # from. The human-readable pass is separate so a parse failure in one
+        # never hides the other.
+        fortranspire analyze --format json --no-toolchain-check \
+          --fail-on note --output "$json" ${{ inputs.path }} || true
+
+        if [ ! -s "$json" ]; then
+          echo "::error::fortranspire produced no findings JSON — analysis failed."
+          exit 1
+        fi
+
+        # Counts drive both the outputs and the severity gate. Kept as one
+        # `python -c` line so the whole step stays inside the YAML block
+        # scalar (a de-indented heredoc silently truncates it).
+        counts=$(python -c 'import json,sys; d=json.load(open(sys.argv[1])); t={"error":0,"warning":0,"note":0}; [t.__setitem__(f.get("severity","note"), t.get(f.get("severity","note"),0)+1) for e in d.get("files",[]) for f in e.get("findings",[])]; print(t["error"], t["warning"], t["note"])' "$json")
+        read -r errors warnings notes <<< "$counts"
+        total=$(( errors + warnings + notes ))
+
+        echo "json-file=$json"          >> "$GITHUB_OUTPUT"
+        echo "error-count=$errors"      >> "$GITHUB_OUTPUT"
+        echo "warning-count=$warnings"  >> "$GITHUB_OUTPUT"
+        echo "finding-count=$total"     >> "$GITHUB_OUTPUT"
+
+        echo "fortranspire: $errors error(s), $warnings warning(s), $notes note(s)."
+
+        # Console rendering for the log.
+        fortranspire analyze --no-color --no-toolchain-check \
+          --fail-on note ${{ inputs.path }} || true
+
+        if [ "${{ inputs.sarif }}" = "true" ]; then
+          sarif="${outdir}/fortranspire.sarif"
+          fortranspire analyze --format sarif --no-toolchain-check \
+            --fail-on note --output "$sarif" ${{ inputs.path }} || true
+          if [ -s "$sarif" ]; then
+            echo "sarif-file=$sarif" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning::SARIF generation produced no file."
+            echo "sarif-file=" >> "$GITHUB_OUTPUT"
+          fi
+        else
+          echo "sarif-file=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Port-cost estimate
+      id: explain
+      if: inputs.explain == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -uo pipefail
+        report="${RUNNER_TEMP}/fortranspire/port-cost.md"
+        fortranspire explain --output "$report" ${{ inputs.path }} || true
+        if [ -s "$report" ]; then
+          echo "report-file=$report" >> "$GITHUB_OUTPUT"
+        else
+          echo "report-file=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Call graph
+      id: graph
+      if: inputs.call-graph == 'true'
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -uo pipefail
+        graph="${RUNNER_TEMP}/fortranspire/call-graph.md"
+        fortranspire graph --output "$graph" ${{ inputs.path }} || true
+        if [ -s "$graph" ]; then
+          echo "graph-file=$graph" >> "$GITHUB_OUTPUT"
+        else
+          echo "graph-file=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Job summary
+      if: inputs.summary == 'true' && steps.explain.outputs.report-file != ''
+      shell: bash
+      run: cat "${{ steps.explain.outputs.report-file }}" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Upload SARIF to Code Scanning
+      if: inputs.upload-sarif == 'true' && steps.analyze.outputs.sarif-file != ''
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ steps.analyze.outputs.sarif-file }}
+        category: fortranspire
+
+    - name: Upload reports as artifact
+      if: always() && inputs.artifact-name != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ runner.temp }}/fortranspire/
+        if-no-files-found: warn
+
+    - name: Comment on the pull request
+      if: inputs.comment == 'true' && github.event_name == 'pull_request' && steps.explain.outputs.report-file != ''
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const fs = require('fs');
+          const body = fs.readFileSync(process.env.REPORT, 'utf8');
+          const marker = '<!-- fortranspire-port-cost -->';
+          const { owner, repo } = context.repo;
+          const issue_number = context.payload.pull_request.number;
+          const existing = await github.paginate(
+            github.rest.issues.listComments, { owner, repo, issue_number });
+          const mine = existing.find(c => c.body && c.body.includes(marker));
+          const payload = `${marker}\n${body}`;
+          if (mine) {
+            await github.rest.issues.updateComment(
+              { owner, repo, comment_id: mine.id, body: payload });
+          } else {
+            await github.rest.issues.createComment(
+              { owner, repo, issue_number, body: payload });
+          }
+      env:
+        REPORT: ${{ steps.explain.outputs.report-file }}
+
+    # The gate runs last so the SARIF, the summary and the PR comment are all
+    # published even when the analysis fails the build.
+    - name: Enforce severity gate
+      if: inputs.fail-on != 'none'
+      shell: bash
+      run: |
+        set -euo pipefail
+        errors=${{ steps.analyze.outputs.error-count }}
+        warnings=${{ steps.analyze.outputs.warning-count }}
+        total=${{ steps.analyze.outputs.finding-count }}
+        case "${{ inputs.fail-on }}" in
+          error)   blocking=$errors ;;
+          warning) blocking=$(( errors + warnings )) ;;
+          note)    blocking=$total ;;
+          *) echo "::error::invalid fail-on '${{ inputs.fail-on }}' (error|warning|note|none)"; exit 1 ;;
+        esac
+        if [ "$blocking" -gt 0 ]; then
+          echo "::error::fortranspire found $blocking finding(s) at or above '${{ inputs.fail-on }}'."
+          exit 1
+        fi
+        echo "No finding at or above '${{ inputs.fail-on }}'."

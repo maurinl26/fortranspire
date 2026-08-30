@@ -7,6 +7,113 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — agent surfaces on GitHub
+
+- **GitHub App** (`fortranspire github-app`, issue #50). A Starlette
+  webhook receiver that turns `/fortranspire <verb> <path>` comments on
+  issues and pull requests into pipeline runs, replies with the report,
+  and opens a pull request for the verbs that rewrite code. New package
+  `fortranspire/github_app/`, new `[github-app]` extra, new CLI verb.
+  Every verb shells out to the same `fortranspire` console script the CLI
+  and MCP server use — the App adds a trigger and an authorisation layer,
+  not a second implementation. Two independent gates, both failing
+  closed: an operator-configured installation allow-list (absent means
+  refuse everything) and a repository write-access check on the commenter
+  (an unresolvable lookup counts as no permission). Token-spending verbs
+  are opted in per installation and default to off. Paths are jailed
+  against the checkout with symlinks resolved first, and LLM keys are
+  stripped from the subprocess environment for the verbs advertised as
+  free. 85 tests in `tests/github_app/`.
+- **Claude Code GitHub Action workflow** (`.github/workflows/claude-port.yml`,
+  issue #48). `@fortranspire` on a pull request runs Claude Code with the
+  fortranspire MCP server wired in over stdio. Notably, it sets
+  `FORTRANSPIRE_DISABLE_JAIL=0` and `AGENT_WORKSPACE`: stdio mode disables
+  the workspace jail by default, which is right for a local IDE and wrong
+  when the agent acts on a third party's comment. The Mistral key reaches
+  the MCP server through the step environment rather than `claude_args`,
+  so it never lands in the process list. The prompt makes the free
+  `explain_port_cost` call mandatory before any token-spending port.
+- **GitHub Copilot cloud agent integration** (issue #49):
+  `.github/workflows/copilot-setup-steps.yml` (the job name is
+  load-bearing — GitHub matches on it literally) and
+  `.github/agents/fortran-porter.agent.md`, the only mechanism that keeps
+  the MCP configuration in Git. The allow-list is restricted to the three
+  deterministic tools: Copilot invokes MCP tools autonomously with no
+  approval prompt, so nothing that spends a token or writes a file is
+  exposed there.
+- **`tests/test_agent_surfaces.py`** — pins what only executes on someone
+  else's infrastructure: the embedded MCP JSON parses, the jail variables
+  are present, no secret is inlined into `claude_args`, the Copilot job
+  keeps the name GitHub matches on, and the Copilot allow-list contains
+  only tools the server actually registers.
+- Documentation: `docs/integrations/github-app.md`,
+  `claude-code-action.md`, `copilot-coding-agent.md`, plus a README
+  section comparing the four GitHub surfaces by cost and trust.
+
+### Security
+
+- **The MCP server no longer fails open when auth cannot be
+  installed.** `_install_auth()` attached the bearer/rate-limit/audit
+  middleware through `mcp._app`, a private attribute FastMCP 3.x
+  removed. It logged `[Erreur] Impossible de sécuriser l'API` and then
+  started the server **anyway** — so `API_KEY=… fortranspire mcp`
+  served every tool, the LLM ones included, to unauthenticated
+  clients. The middleware is now passed to `mcp.run(middleware=…)`,
+  and a configured-but-unattachable stack raises
+  `AuthNotInstallable`, which aborts start-up with exit code 1.
+  Behaviour with no token configured is unchanged (local OSS use stays
+  unauthenticated). Verified over real HTTP in
+  `tests/server/test_mcp_http.py`.
+
+### Added
+
+- **`/health` endpoint on the MCP server.** It was declared in
+  `integration/le-chat-connector.json` (`health_check: /health`) and
+  allow-listed in the auth middleware, but never registered as a
+  route, so it answered 404 — blocking the hosted-deployment
+  acceptance criteria of #43 (European Weather Cloud) and #51 (Le Chat
+  connector directory). Answers without a token and reports service,
+  version, transport and tool count.
+- **Reusable composite GitHub Action** at the repository root
+  (`action.yml`, issue #47). Any Fortran repository gets GPU-portability
+  findings in Code Scanning, a port-cost estimate in the job summary or
+  as a PR comment, and a Mermaid call-graph artifact from one `uses:`
+  line — deterministic Loki path only, so no LLM, no secret and safe on
+  forks. The severity gate runs last so every report is published even
+  when the build fails. Documented in the README; contract pinned by
+  `tests/test_github_action.py`.
+- **`.github/workflows/action-selftest.yml`** — exercises the action the
+  way an external repository would, including the minimum-permission
+  case and a run where the gate is expected to fire.
+
+### Changed
+
+- **Unified the MCP path argument on `path`.** `translate_kernel_gpu`,
+  `translate_kernel`, `profile_kernels` and `explain_port_cost` took
+  `filepath` while `analyze_kernels`, `build_call_graph` and
+  `generate_docs` took `path` — the same concept under two spellings,
+  and `filepath` accepted directories anyway. An agent reading the
+  schema could not tell which tool wanted which, and burned a turn on
+  the validation error. `path` is now the single required argument on
+  every path-taking tool; `integration/le-chat-connector.json` is
+  updated to match.
+- **`.github/workflows/analyze.yml` now consumes the action** it
+  publishes (`uses: ./` with `version: local`), so CI exercises the
+  working tree rather than the last published wheel.
+
+### Fixed
+
+- **README, JOSS paper and the mistral-vibe integration pages
+  advertised MCP tools that do not exist.** The prose referred to
+  `fortranspire_explain_port_cost`, `fortranspire_translate_kernel_gpu`
+  and `fortranspire_build_call_graph`; the server registers those names
+  without the `fortranspire_` prefix, so the README quick-start returned
+  `Unknown tool`. The tables further down the same pages were already
+  correct. `tests/server/test_mcp_http.py` now fails on any
+  reintroduction, and cross-checks the connector manifest against the
+  live schema.
+
+
 ## [0.2.1] — 2026-06-24
 
 Patch release: pre-JOSS-submission hardening. No API breaks; the only

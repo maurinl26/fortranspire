@@ -127,7 +127,7 @@ documented in the [Fortran patterns guide](https://fortranspire.readthedocs.io/e
 The pipeline is exercised end-to-end against
 [PHYEX](https://github.com/UMR-CNRM/PHYEX), the Météo-France
 physics-parameterisations package. Calling
-`fortranspire_explain_port_cost` on
+`explain_port_cost` on
 `src/common/turb/mode_compute_function_thermo.F90` (119 lines, 1
 routine) from inside `mistral-vibe` returns the structural assessment
 in approximately two seconds with no LLM tokens consumed (Loki AST

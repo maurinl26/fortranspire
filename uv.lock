@@ -904,7 +904,7 @@ wheels = [
 
 [[package]]
 name = "fortranspire"
-version = "0.1.3"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "langgraph" },
@@ -935,6 +935,20 @@ docs = [
     { name = "sphinx" },
     { name = "sphinx-copybutton" },
     { name = "sphinx-design" },
+]
+github-app = [
+    { name = "cython" },
+    { name = "fortls" },
+    { name = "fprettify" },
+    { name = "httpx" },
+    { name = "langchain" },
+    { name = "langchain-community" },
+    { name = "langchain-core" },
+    { name = "langchain-mistralai" },
+    { name = "langchain-openai" },
+    { name = "pyjwt", extra = ["crypto"] },
+    { name = "starlette" },
+    { name = "uvicorn" },
 ]
 gpu = [
     { name = "cython" },
@@ -973,6 +987,7 @@ mcp = [
 tests = [
     { name = "pytest" },
     { name = "pytest-cov" },
+    { name = "pyyaml" },
 ]
 
 [package.metadata]
@@ -983,12 +998,14 @@ requires-dist = [
     { name = "flax", marker = "extra == 'jax'", specifier = ">=0.8.0" },
     { name = "fortls", marker = "extra == 'gpu'", specifier = ">=3.1" },
     { name = "fortranspire", extras = ["gpu"], marker = "extra == 'all'" },
+    { name = "fortranspire", extras = ["gpu"], marker = "extra == 'github-app'" },
     { name = "fortranspire", extras = ["gpu"], marker = "extra == 'jax'" },
     { name = "fortranspire", extras = ["gpu"], marker = "extra == 'mcp'" },
     { name = "fortranspire", extras = ["jax"], marker = "extra == 'all'" },
     { name = "fortranspire", extras = ["mcp"], marker = "extra == 'all'" },
     { name = "fprettify", marker = "extra == 'gpu'", specifier = ">=0.3.7" },
     { name = "furo", marker = "extra == 'docs'", specifier = ">=2024.5" },
+    { name = "httpx", marker = "extra == 'github-app'", specifier = ">=0.27" },
     { name = "jax", extras = ["cpu"], marker = "extra == 'jax'", specifier = ">=0.4.0" },
     { name = "langchain", marker = "extra == 'gpu'", specifier = ">=0.3" },
     { name = "langchain-community", marker = "extra == 'gpu'", specifier = ">=0.3" },
@@ -1000,14 +1017,18 @@ requires-dist = [
     { name = "loki-ifs", specifier = ">=0.3.7" },
     { name = "myst-parser", marker = "extra == 'docs'", specifier = ">=3.0" },
     { name = "numpy" },
+    { name = "pyjwt", extras = ["crypto"], marker = "extra == 'github-app'", specifier = ">=2.8" },
     { name = "pytest", marker = "extra == 'tests'", specifier = ">=8.0" },
     { name = "pytest-cov", marker = "extra == 'tests'", specifier = ">=5.0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", marker = "extra == 'tests'", specifier = ">=6.0" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=7.3,<9" },
     { name = "sphinx-copybutton", marker = "extra == 'docs'", specifier = ">=0.5.2" },
     { name = "sphinx-design", marker = "extra == 'docs'", specifier = ">=0.6" },
+    { name = "starlette", marker = "extra == 'github-app'", specifier = ">=0.37" },
+    { name = "uvicorn", marker = "extra == 'github-app'", specifier = ">=0.29" },
 ]
-provides-extras = ["cpu", "gpu", "mcp", "jax", "all", "docs", "tests"]
+provides-extras = ["cpu", "gpu", "mcp", "github-app", "jax", "all", "docs", "tests"]
 
 [[package]]
 name = "fparser"

@@ -1,0 +1,95 @@
+name: Action self-test
+
+# Proves the reusable composite action (root `action.yml`, issue #47) works
+# the way an external repository would consume it: no secret, no LLM, and
+# only the permissions advertised in the README. Guards the acceptance
+# criterion "works in a clean external repo with only security-events: write".
+
+on:
+  pull_request:
+    paths:
+      - 'action.yml'
+      - '.github/workflows/action-selftest.yml'
+      - 'fortranspire/agent/**'
+  push:
+    branches: [main]
+    paths:
+      - 'action.yml'
+      - '.github/workflows/action-selftest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  clean-tree:
+    name: passes on a clean kernel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the action
+        id: fortranspire
+        uses: ./
+        with:
+          path: tests/fixtures/doc_kernel.f90
+          version: local
+          fail-on: error
+          call-graph: true
+          # Code Scanning upload needs `security-events: write`; this job
+          # deliberately runs with the minimum permission set to prove the
+          # action degrades cleanly without it.
+          upload-sarif: false
+          artifact-name: selftest-clean
+
+      - name: Assert outputs
+        run: |
+          set -euo pipefail
+          test "${{ steps.fortranspire.outputs.error-count }}" = "0"
+          test "${{ steps.fortranspire.outputs.warning-count }}" = "0"
+          test -s "${{ steps.fortranspire.outputs.sarif-file }}"
+          test -s "${{ steps.fortranspire.outputs.json-file }}"
+          test -s "${{ steps.fortranspire.outputs.report-file }}"
+          test -s "${{ steps.fortranspire.outputs.graph-file }}"
+          echo "All outputs produced."
+
+  gate-fires:
+    name: fails on a kernel with a blocking finding
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      # The equivalence driver contains deliberate I/O, so the analyzer
+      # raises FORT001 (error). The gate must fail the step — and the run
+      # must still have produced its reports first.
+      - name: Run the action (expected to fail the gate)
+        id: fortranspire
+        continue-on-error: true
+        uses: ./
+        with:
+          path: tests/fixtures/equivalence/wave_kernels/driver.f90
+          version: local
+          fail-on: error
+          explain: false
+          upload-sarif: false
+          artifact-name: selftest-gate
+
+      - name: Assert the gate fired
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.fortranspire.outcome }}" != "failure" ]; then
+            echo "::error::fail-on=error did not fail on a FORT001 finding."
+            exit 1
+          fi
+          # Whether a composite action still publishes its outputs after an
+          # internal step fails is not contractually guaranteed, so only
+          # assert on the count when it came through.
+          count="${{ steps.fortranspire.outputs.error-count }}"
+          if [ -n "$count" ]; then
+            test "$count" -ge 1
+            echo "Gate fired on $count error(s)."
+          else
+            echo "Gate fired (outputs not published after in-action failure)."
+          fi
