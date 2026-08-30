@@ -79,6 +79,30 @@ mcp = FastMCP(
 )
 
 
+# ── Health probe ──────────────────────────────────────────────────────────
+# Declared as a public endpoint by `integration/le-chat-connector.json`
+# (`health_check: /health`) and listed in `_OPEN_PATHS` of the auth
+# middleware, so it answers before the bearer check. Deployment targets
+# (European Weather Cloud, Le Chat connector directory, any load balancer)
+# probe this to decide whether the instance is live — it must never
+# require a token and must never touch the LLM stack.
+@mcp.custom_route("/health", methods=["GET"])
+async def health(_request):  # pragma: no cover - exercised via HTTP in tests
+    from starlette.responses import JSONResponse
+
+    from fortranspire import __version__
+
+    return JSONResponse(
+        {
+            "status": "ok",
+            "service": "fortranspire",
+            "version": __version__,
+            "transport": "sse",
+            "tools": len(_TOOL_NAMES),
+        }
+    )
+
+
 @mcp.tool()
 def ask_agent(query: str) -> str:
     """Envoie une requête en langage naturel à l'agent de code et retourne sa réponse.
@@ -102,19 +126,19 @@ def agent_status() -> str:
 
 
 @mcp.tool()
-def translate_kernel_gpu(filepath: str) -> str:
+def translate_kernel_gpu(path: str) -> str:
     """Phase 1 — Transforme un fichier Fortran en Fortran GPU + wrapper Cython.
 
     Pipeline : parser → PURE/ELEMENTAL → OpenACC → Cython wrapper → validation
     Compilateur : nvfortran -acc -gpu=cc80
 
     Args:
-        filepath: Chemin absolu vers le fichier .f90.
+        path: Chemin absolu vers le fichier .f90.
     """
     from fortranspire.agent.translation_graph_phase1 import translation_app_phase1
 
     try:
-        safe_path = _jail(filepath)
+        safe_path = _jail(path)
     except PermissionError as e:
         return f"Erreur d'accès : {e}"
 
@@ -125,7 +149,7 @@ def translate_kernel_gpu(filepath: str) -> str:
         return f"Erreur de lecture : {e}"
 
     initial_state = {
-        "fortran_filepath": filepath,
+        "fortran_filepath": str(safe_path),
         "fortran_code": code,
         "ast_info": {},
         "kernel_results": [],
@@ -149,7 +173,7 @@ def translate_kernel_gpu(filepath: str) -> str:
 
     return (
         f"=== Phase 1 — Fortran GPU + Cython ===\n"
-        f"Fichier    : {filepath}\n"
+        f"Fichier    : {safe_path}\n"
         f"Validation : {status}\n\n"
         f"Sorties :\n"
         f"  output/fortran_gpu/kernel_pure.f90  — PURE/ELEMENTAL annotated\n"
@@ -161,16 +185,16 @@ def translate_kernel_gpu(filepath: str) -> str:
 
 
 @mcp.tool()
-def translate_kernel(filepath: str) -> str:
+def translate_kernel(path: str) -> str:
     """Phase 2 — Traduit un kernel Fortran en JAX (expérimental).
 
     Args:
-        filepath: Chemin absolu vers le fichier .f90.
+        path: Chemin absolu vers le fichier .f90.
     """
     from fortranspire.agent.translation_graph import translation_app
 
     try:
-        safe_path = _jail(filepath)
+        safe_path = _jail(path)
     except PermissionError as e:
         return f"Erreur d'accès : {e}"
 
@@ -181,7 +205,7 @@ def translate_kernel(filepath: str) -> str:
         return f"Erreur de lecture : {e}"
 
     initial_state = {
-        "fortran_filepath": filepath,
+        "fortran_filepath": str(safe_path),
         "fortran_code": code,
         "ast_info": {},
         "isolated_kernel": "",
@@ -194,7 +218,7 @@ def translate_kernel(filepath: str) -> str:
     final = translation_app.invoke(initial_state)
     return (
         f"=== Phase 2 — JAX Translation ===\n"
-        f"Fichier : {filepath}\n\n"
+        f"Fichier : {safe_path}\n\n"
         f"Code JAX généré :\n```python\n{final.get('jax_code', '')}\n```\n\n"
         f"Reproductibilité : {final.get('test_results', {})}\n"
         f"Performances     : {final.get('performance_metrics', {})}"
@@ -202,16 +226,16 @@ def translate_kernel(filepath: str) -> str:
 
 
 @mcp.tool()
-def profile_kernels(filepath: str) -> str:
+def profile_kernels(path: str) -> str:
     """Compare les performances entre le Fortran original et sa traduction existante.
 
     Args:
-        filepath: Chemin absolu vers le fichier .f90 original.
+        path: Chemin absolu vers le fichier .f90 original.
     """
     from fortranspire.agent.translation_graph import performance_agent
 
     try:
-        safe_path = _jail(filepath)
+        safe_path = _jail(path)
     except PermissionError as e:
         return f"Erreur d'accès : {e}"
 
@@ -281,7 +305,7 @@ def analyze_kernels(
 
 
 @mcp.tool()
-def explain_port_cost(filepath: str) -> str:
+def explain_port_cost(path: str) -> str:
     """Pre-flight cost + risk estimate. No LLM, no tokens consumed.
 
     Reports routine count, control-flow complexity, GPU portability
@@ -290,12 +314,12 @@ def explain_port_cost(filepath: str) -> str:
     port to know whether the file is portable and what it would cost.
 
     Args:
-        filepath: Absolute path to the `.f90` file.
+        path: Absolute path to the `.f90` file or directory.
     """
     from fortranspire.agent.explain import main as explain_main
 
     try:
-        safe_path = _jail(filepath)
+        safe_path = _jail(path)
     except PermissionError as e:
         return f"explain rc=2\nErreur d'accès : {e}"
 
@@ -378,13 +402,42 @@ def generate_docs(
     return f"doc rc={rc}\n{text}"
 
 
-def _install_auth(mcp_instance) -> None:
-    """Attach the auth + rate-limit + audit middleware when configured.
+# Canonical MCP tool surface. Kept as an explicit tuple (rather than
+# introspected) so a rename shows up as a diff here, in the docs, and in
+# `integration/le-chat-connector.json` at the same time — the three drifted
+# apart once already (README advertised `fortranspire_*`-prefixed names
+# that never existed on the server).
+_TOOL_NAMES: tuple[str, ...] = (
+    "ask_agent",
+    "agent_status",
+    "translate_kernel_gpu",
+    "translate_kernel",
+    "profile_kernels",
+    "analyze_kernels",
+    "explain_port_cost",
+    "build_call_graph",
+    "generate_docs",
+)
 
-    Backwards-compatible: when no registry file and no `API_KEY` env are
-    set, the server runs unauthenticated (legacy behavior). When `API_KEY`
-    is set, it's promoted to a single-token registry entry. When
-    `FORTRANSPIRE_TOKENS_FILE` is set, the JSON registry takes precedence.
+
+class AuthNotInstallable(RuntimeError):
+    """Raised when tokens are configured but the middleware cannot be attached.
+
+    Fail **closed**: a server that was asked to authenticate and cannot must
+    refuse to start rather than silently serve every tool to the open
+    internet. The previous implementation reached into ``mcp._app``, which
+    FastMCP 3.x no longer exposes — it printed an error and started anyway,
+    so `API_KEY=... fortranspire mcp` served unauthenticated traffic.
+    """
+
+
+def _build_auth_middleware() -> list:
+    """Return the ASGI middleware stack for the HTTP transports.
+
+    Empty list when no token is configured (legacy unauthenticated mode,
+    kept for OSS users running on localhost). When a token *is* configured
+    and the stack cannot be built, raises ``AuthNotInstallable`` so the
+    caller aborts instead of falling back to an open server.
     """
     from fortranspire.security.auth import RateLimiter, TokenRegistry, build_middleware
 
@@ -392,16 +445,22 @@ def _install_auth(mcp_instance) -> None:
     if not registry:
         print("[Sécurité] Pas de token configuré — serveur public (API_KEY ou "
               "FORTRANSPIRE_TOKENS_FILE pour activer l'auth).")
-        return
+        return []
+
+    try:
+        from starlette.middleware import Middleware
+
+        stack = [Middleware(build_middleware(registry, RateLimiter()))]
+    except Exception as exc:  # noqa: BLE001 - re-raised as a fatal start error
+        raise AuthNotInstallable(
+            f"tokens are configured but the auth middleware could not be built "
+            f"({type(exc).__name__}: {exc}). Refusing to start an unauthenticated "
+            f"network server."
+        ) from exc
 
     print(f"[Sécurité] Auth activée — {len(registry)} token(s), "
           f"audit log → {os.getenv('FORTRANSPIRE_AUDIT_PATH', 'output/audit.jsonl')}")
-
-    middleware_cls = build_middleware(registry, RateLimiter())
-    if hasattr(mcp_instance, "_app"):
-        mcp_instance._app.add_middleware(middleware_cls)
-    else:
-        print("[Erreur] Impossible de sécuriser l'API : app interne non accessible.")
+    return stack
 
 
 def main() -> None:
@@ -431,8 +490,12 @@ def main() -> None:
 
     host = os.getenv("MCP_HOST", "0.0.0.0")
     port = int(os.getenv("MCP_PORT", "8000"))
-    _install_auth(mcp)
-    mcp.run(transport="sse", host=host, port=port)
+    try:
+        middleware = _build_auth_middleware()
+    except AuthNotInstallable as exc:
+        print(f"[Erreur] {exc}", file=sys.stderr)
+        raise SystemExit(1) from exc
+    mcp.run(transport="sse", host=host, port=port, middleware=middleware)
 
 
 if __name__ == "__main__":

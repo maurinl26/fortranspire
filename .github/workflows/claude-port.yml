@@ -1,0 +1,111 @@
+name: Claude port (fortranspire MCP)
+
+# Issue #48 — LLM porting triggered from a comment on an issue or PR.
+#
+# A maintainer writes, on a pull request:
+#
+#     @fortranspire porte src/common/turb/mode_thermo.F90 en GPU
+#
+# and the Claude Code Action runs with the fortranspire MCP server wired
+# in, performs the Phase-1 transformation through the same tools the CLI
+# uses, and pushes the result to a branch.
+#
+# This workflow SPENDS TOKENS and WRITES CODE. It is for trusted
+# repositories only. The free, deterministic path — port-cost estimates
+# and GPU-portability findings with no LLM and no secret — is the
+# `fortranspire` composite action wired in `analyze.yml`; start there.
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+permissions:
+  contents: write        # push the ported branch
+  pull-requests: write   # comment the summary
+  issues: write
+
+concurrency:
+  # One port at a time per thread: two concurrent runs would race on the
+  # same branch and on `output/`.
+  group: claude-port-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  port:
+    name: Phase-1 port via Claude + fortranspire MCP
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # Cheap filter. The action itself enforces the real gate: it refuses
+    # actors without write access on the repository before Claude runs.
+    if: contains(github.event.comment.body, '@fortranspire')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # The MCP server needs the LLM extras: `translate_kernel_gpu` drives
+      # the LangChain stack, unlike the analyze-only path.
+      - name: Install fortranspire (with MCP + LLM extras)
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet --upgrade 'fortranspire[mcp]'
+          # Absolute path: the action spawns the MCP server itself and may
+          # not inherit the PATH that setup-python arranged.
+          echo "FORTRANSPIRE_BIN=$(command -v fortranspire)" >> "$GITHUB_ENV"
+          fortranspire --help > /dev/null
+
+      - name: Run Claude with the fortranspire MCP server
+        uses: anthropics/claude-code-action@v1
+        env:
+          # Read by the MCP config below through `${VAR}` substitution, so
+          # the key never appears on a command line or in the run log.
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+          # Keep the workspace jail ON. `fortranspire mcp --stdio` disables
+          # it by default because a local IDE owns the trust boundary — here
+          # the agent acts on a comment written by a third party, so paths
+          # must stay inside the checkout.
+          FORTRANSPIRE_DISABLE_JAIL: '0'
+          AGENT_WORKSPACE: ${{ github.workspace }}
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          trigger_phrase: '@fortranspire'
+          branch_prefix: 'fortranspire/'
+          base_branch: ${{ github.event.pull_request.base.ref || 'main' }}
+          claude_args: |
+            --model claude-sonnet-5
+            --max-turns 20
+            --allowedTools Read,Edit,Write,Bash,mcp__fortranspire
+            --mcp-config '{"mcpServers":{"fortranspire":{"command":"${FORTRANSPIRE_BIN}","args":["mcp","--stdio"],"env":{"MISTRAL_API_KEY":"${MISTRAL_API_KEY}","MISTRAL_MODEL":"codestral-latest","FORTRANSPIRE_DISABLE_JAIL":"0","AGENT_WORKSPACE":"${AGENT_WORKSPACE}"}}}}'
+          prompt: |
+            You are porting legacy Fortran to GPU in this repository, using
+            the `fortranspire` MCP server. Follow this order and do not skip
+            the first step.
+
+            1. Call `explain_port_cost` on the file the commenter named.
+               It costs nothing and reports the structural risks. If it
+               reports a blocking finding (I/O inside the kernel, a
+               loop-carried dependency), say so and stop — do not attempt
+               the port.
+            2. Call `analyze_kernels` to get the detailed findings.
+            3. Only if the file is portable, call `translate_kernel_gpu`
+               (or `translate_kernel` when the commenter asked for JAX).
+            4. Report back: what changed, the structural risks that
+               remained, and the estimated cost from step 1.
+
+            Do not hand-write OpenACC pragmas yourself — the whole point of
+            the MCP server is that the Loki AST backbone does that
+            deterministically. If a tool fails, report the failure rather
+            than working around it by editing the Fortran directly.
+
+            Paths are jailed to the repository checkout. A path outside it
+            is a mistake in the request, not something to work around.

@@ -50,6 +50,9 @@ concepts/jax-optimization
 integrations/claude-code
 integrations/mistral-vibe
 integrations/ide-interactive-mode
+integrations/claude-code-action
+integrations/copilot-coding-agent
+integrations/github-app
 ```
 
 ```{toctree}

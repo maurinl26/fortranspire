@@ -48,6 +48,7 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "translate":  ("fortranspire.agent.cli",      "_translate_main"),
     "profile":    ("fortranspire.agent.cli",      "_profile_main"),
     "mcp":        ("fortranspire.server",         "main"),
+    "github-app": ("fortranspire.github_app.app",  "main"),
 }
 
 _HELP = """\
@@ -72,6 +73,7 @@ Commands:
   translate   Phase 2: Fortran → JAX (experimental)
   profile     Performance benchmarking
   mcp         Run the MCP server (default HTTP/SSE; --stdio for vibe / Claude Desktop)
+  github-app  Run the GitHub App webhook receiver (/fortranspire commands)
 
 Legacy aliases (deprecated, removed in 0.3):
   agent-analyze, agent-doc, agent-explain, agent-format, agent-gpu,

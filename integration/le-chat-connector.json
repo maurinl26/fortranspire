@@ -1,6 +1,5 @@
 {
   "$schema_note": "Draft for the Le Chat connector directory (beta). Fields and required keys may evolve; align with the latest official schema before submission. Not yet submitted as of 2026-06-21.",
-
   "name": "fortranspire",
   "display_name": "Fortran → GPU / JAX (HPC porting agent)",
   "version": "0.2.0",
@@ -14,12 +13,23 @@
   "homepage": "https://github.com/maurinl26/fortranspire",
   "documentation": "https://fortranspire.readthedocs.io",
   "source_code": "https://github.com/maurinl26/fortranspire",
-  "categories": ["scientific-computing", "hpc", "code-generation", "developer-tools"],
-  "tags": ["fortran", "openacc", "gpu", "cython", "jax", "seismic", "numerical-weather-prediction"],
-
+  "categories": [
+    "scientific-computing",
+    "hpc",
+    "code-generation",
+    "developer-tools"
+  ],
+  "tags": [
+    "fortran",
+    "openacc",
+    "gpu",
+    "cython",
+    "jax",
+    "seismic",
+    "numerical-weather-prediction"
+  ],
   "summary_en": "Port legacy Fortran 90 HPC kernels to OpenACC GPU and Cython (Phase 1) or differentiable JAX (Phase 2). Built on ECMWF Loki for deterministic AST analysis; the LLM only intervenes where semantic understanding is required (~4 calls per kernel).",
   "summary_fr": "Porte des kernels Fortran 90 HPC vers OpenACC GPU et Cython (Phase 1) ou vers JAX différentiable (Phase 2). S'appuie sur Loki (ECMWF) pour l'analyse AST déterministe ; le LLM n'intervient que sur les étapes sémantiques (~4 appels par kernel).",
-
   "transport": {
     "type": "mcp",
     "protocol": "sse",
@@ -27,24 +37,30 @@
     "health_check": "/health",
     "tls_required": true
   },
-
   "auth": {
     "type": "bearer",
     "header": "Authorization",
     "scheme": "Bearer",
     "scope_note": "Static API key provisioned by the connector operator (env var API_KEY on the MCP server). The connector directory passes it to Le Chat as a secret."
   },
-
   "tools": [
     {
       "id": "translate_kernel_gpu",
       "title": "Port a Fortran kernel to GPU + Cython",
       "description": "Phase 1 — transforms a Fortran 90 file into a PURE/ELEMENTAL module annotated with OpenACC pragmas (!$acc parallel loop, !$acc data) and a Cython wrapper (iso_c_binding header + NumPy typed memoryviews). Validates the result with gfortran and nvfortran -acc.",
       "inputs": [
-        {"name": "filepath", "type": "string", "required": true, "description": "Absolute path to the .f90 file inside the MCP server's workspace."}
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "description": "Absolute path to the .f90 file inside the MCP server's workspace."
+        }
       ],
       "estimated_latency_seconds": 120,
-      "side_effects": ["writes output/fortran_gpu/", "writes output/cython/"],
+      "side_effects": [
+        "writes output/fortran_gpu/",
+        "writes output/cython/"
+      ],
       "llm_calls_per_invocation": 4
     },
     {
@@ -52,7 +68,12 @@
       "title": "Translate a Fortran kernel to JAX (experimental)",
       "description": "Phase 2 — translates an isolated Fortran kernel into a JAX implementation that is JIT-compilable via XLA and differentiable through jax.grad / jax.vjp.",
       "inputs": [
-        {"name": "filepath", "type": "string", "required": true}
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "description": "Absolute path to the .f90 file or directory inside the MCP server's workspace."
+        }
       ],
       "estimated_latency_seconds": 60
     },
@@ -61,7 +82,12 @@
       "title": "Benchmark a Fortran kernel against its translation",
       "description": "Compiles and times the original Fortran kernel and any existing GPU / JAX translation, returns a structured comparison.",
       "inputs": [
-        {"name": "filepath", "type": "string", "required": true}
+        {
+          "name": "path",
+          "type": "string",
+          "required": true,
+          "description": "Absolute path to the .f90 file or directory inside the MCP server's workspace."
+        }
       ],
       "estimated_latency_seconds": 30
     },
@@ -70,32 +96,34 @@
       "title": "Natural-language Q&A on a Fortran codebase",
       "description": "Free-form questions about the structure, INTENT, COMMON blocks, or GPU-readiness of the codebase mounted in the MCP server's workspace.",
       "inputs": [
-        {"name": "query", "type": "string", "required": true}
+        {
+          "name": "query",
+          "type": "string",
+          "required": true
+        }
       ],
       "estimated_latency_seconds": 15
     }
   ],
-
   "privacy": {
     "data_handling": "User-provided Fortran source is sent to the MCP server's configured LLM endpoint (Mistral La Plateforme by default; can be re-pointed at a self-hosted vLLM/TGI on-prem). The agent does not persist user code beyond the run unless the operator configures a workspace volume.",
     "stores_user_data": false,
-    "sub_processors": ["Mistral La Plateforme (default LLM provider; configurable)"],
+    "sub_processors": [
+      "Mistral La Plateforme (default LLM provider; configurable)"
+    ],
     "data_residency": "EU when using La Plateforme; fully on-prem when self-hosted",
     "deletion_policy": "Outputs are written under output/ inside the operator's workspace and are not transmitted further; deleting the workspace volume deletes all artifacts."
   },
-
   "compliance": {
     "license": "Apache-2.0",
     "open_source": true,
     "sovereignty": "EU — no Azure / AWS / GCP dependency on the LLM path."
   },
-
   "support": {
     "issues": "https://github.com/maurinl26/fortranspire/issues",
     "security": "https://github.com/maurinl26/fortranspire/security/advisories/new",
     "discussions": "https://github.com/maurinl26/fortranspire/discussions"
   },
-
   "submission_checklist": [
     "Public HTTPS MCP endpoint reachable from Le Chat (OpenStack tenant or on-prem)",
     "Bearer auth enabled (API_KEY env var set on the server)",
