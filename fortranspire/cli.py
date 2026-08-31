@@ -95,6 +95,23 @@ def _print_help(stream=None) -> None:
     print(_HELP, file=stream if stream is not None else sys.stdout)
 
 
+# Verbs that never import loki — no point warming it for them.
+_NO_LOKI_VERBS = frozenset({"mcp", "github-app"})
+
+
+def _warm_loki() -> None:
+    """Import loki once, eagerly, tolerating an environment without it.
+
+    Works around a fragile first-import in loki-ifs under Python 3.12
+    (issue #71). A failure here is not fatal: the verb's own code path
+    either falls back (parser) or reports cleanly (graph, once guarded).
+    """
+    try:
+        import loki  # noqa: F401
+    except Exception:  # noqa: BLE001 - the verb handles a missing/broken loki
+        pass
+
+
 def main(argv: list[str] | None = None) -> int:
     """Dispatch ``argv`` to the matching subcommand. Returns its exit code."""
     args = list(argv) if argv is not None else sys.argv[1:]
@@ -108,6 +125,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"fortranspire: unknown command {cmd!r}", file=sys.stderr)
         _print_help(stream=sys.stderr)   # resolved at call time
         return 2
+
+    # Warm the Loki import once, before the verb's lazy `from loki import`.
+    # loki-ifs has a fragile first-import under Python 3.12 (a re-entrant
+    # `import logging` in loki/logging.py surfaces as "partially initialized
+    # module 'logging'"), order-dependent enough that even an import trace
+    # hook hides it. Importing loki eagerly here, in a clean state we have
+    # verified works, sidesteps it; `analyze`/`explain` already survive it
+    # via their own fallback, but `graph` imported loki unguarded and
+    # crashed (issue #71). Verbs that never touch loki (mcp) are skipped.
+    if cmd not in _NO_LOKI_VERBS:
+        _warm_loki()
 
     module_name, attr = _DISPATCH[cmd]
     rest = args[1:]

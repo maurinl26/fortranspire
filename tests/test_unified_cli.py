@@ -144,3 +144,66 @@ def test_unified_dispatch_silent_on_legacy_shaped_commands(
         f"`fortranspire {cmd}` should not show the legacy "
         f"`agent-{cmd}` deprecation message"
     )
+
+
+# ── Loki first-import workaround (issue #71) ───────────────────────────────
+#
+# loki-ifs has a fragile first import under Python 3.12: a re-entrant
+# `import logging` in loki/logging.py surfaces as "partially initialized
+# module 'logging'". It only reproduces in a clean PyPI install, not under
+# the vendored-loki dev environment, so these tests pin the *structure* of
+# the workaround rather than the Heisenbug itself.
+
+class TestLokiWarmup:
+    def test_main_warms_loki_before_dispatching_a_loki_verb(self, monkeypatch):
+        """`graph` imported loki unguarded and crashed; warming it first
+        in a clean state we verified works sidesteps the fragile import."""
+        import fortranspire.cli as cli
+
+        warmed: list[bool] = []
+        monkeypatch.setattr(cli, "_warm_loki", lambda: warmed.append(True))
+        # `graph` dispatches into call_graph; stop before real work by
+        # pointing it at nothing and swallowing its exit.
+        cli.main(["graph", "--help"])
+        assert warmed == [True]
+
+    def test_main_does_not_warm_loki_for_mcp(self, monkeypatch):
+        """`mcp` never touches loki — no reason to import it (and it would
+        pull the parser stack into the server process)."""
+        import fortranspire.cli as cli
+
+        warmed: list[bool] = []
+        monkeypatch.setattr(cli, "_warm_loki", lambda: warmed.append(True))
+        monkeypatch.setitem(cli._DISPATCH, "mcp", ("fortranspire.cli", "_noop_entry"))
+        cli._noop_entry = lambda: 0  # type: ignore[attr-defined]
+        cli.main(["mcp"])
+        assert warmed == []
+
+    def test_warm_loki_tolerates_a_broken_loki(self, monkeypatch):
+        """A failure in the warm-up must never be fatal — the verb's own
+        code path handles a missing or broken loki."""
+        import builtins
+
+        import fortranspire.cli as cli
+
+        real_import = builtins.__import__
+
+        def boom(name, *a, **k):
+            if name == "loki":
+                raise AttributeError("partially initialized module 'logging'")
+            return real_import(name, *a, **k)
+
+        monkeypatch.setattr(builtins, "__import__", boom)
+        cli._warm_loki()  # must not raise
+
+    def test_call_graph_guard_catches_more_than_import_error(self):
+        """The bug was an AttributeError; the guard only caught ImportError,
+        so `graph` crashed while `analyze` (broad guard) survived."""
+        import inspect
+
+        from fortranspire.agent import call_graph
+
+        src = inspect.getsource(call_graph._extract_one)
+        # The loki import is now guarded by a broad Exception, not ImportError.
+        assert "except Exception" in src
+        assert "except ImportError:\n        return FileGraph" not in src

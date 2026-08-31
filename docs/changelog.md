@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fortranspire graph` crashed on a clean PyPI install under Python 3.12
+  (issue #71).** loki-ifs has a fragile first import — a re-entrant
+  `import logging` inside `loki/logging.py` surfaces as "partially
+  initialized module 'logging'", order-dependent enough that even an
+  import-trace hook hides it. `analyze` and `explain` already survived it
+  through their own fallback; `graph` imported loki unguarded and died with
+  a traceback, which the Action self-test caught. Two-part fix: `cli.main`
+  now warms loki once, eagerly, before dispatching a loki-using verb (in a
+  state verified to work), skipping the verbs that never touch it (`mcp`,
+  `github-app`); and `call_graph`'s guard now catches a broad `Exception`,
+  not only `ImportError`, so a still-broken loki degrades to an empty graph
+  with a clear note instead of crashing. Verified in a clean 3.12 venv.
+
+
 ### Added — hosted Le Chat connector (issue #51, split into #76/#77)
 
 - **Inline-source MCP tools** — `analyze_source`, `explain_source`,
