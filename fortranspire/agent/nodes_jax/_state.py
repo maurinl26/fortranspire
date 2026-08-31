@@ -65,6 +65,11 @@ class Phase2State(TypedDict):
     driver_fortran: str
     kernel_names: List[str]
 
+    # How far emission may go to obtain gradients: "none" | "guarded" |
+    # "smooth". Only "smooth" changes what the kernel computes, which is
+    # why it is a mode rather than a default.
+    smoothing: str
+
     # Phase 2 outputs
     functionalized: bool
     jax_module: str                   # consolidated importable module

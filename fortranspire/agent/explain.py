@@ -60,6 +60,7 @@ _RISK_LABELS: dict[str, str] = {
     "FORT010": "No Fortran compiler on PATH (cannot validate output)",
     "FORT011": "!$acc present but no OpenACC-capable compiler available",
     "FORT030": "JAX portability verdict (Phase 2)",
+    "FORT031": "Non-smooth construct (needs a guard or a relaxation)",
 }
 
 

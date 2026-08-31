@@ -50,6 +50,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for routines that are *not* pure: annotating the clean ones would bury
   real findings in Code Scanning.
 
+### Added — differentiability by relaxation (issue #73, second lot)
+
+- **`fortranspire/jax_smooth.py`** — guards and smooth relaxations the
+  emitted kernels import instead of re-deriving. Three reasons it is a
+  library: the stable form is easy to get wrong (the textbook softmax
+  `log(exp(b*a) + exp(b*b))` overflows past `exp(709)` while `logaddexp`
+  does not, and a model writes the textbook one); the limit is worth
+  testing once rather than per generation; and a named import shows a
+  reviewer *where* the model was relaxed and with which parameter.
+- **The distinction the module is built around.** A **guard**
+  (`safe_sqrt`, `safe_divide`, `safe_log`) repairs a translation: forward
+  values unchanged wherever the original was defined, only the NaN or the
+  infinite derivative removed. A **relaxation** (`smooth_max`,
+  `smooth_abs`, `smooth_step`, `smooth_clamp`, `smooth_argmax`,
+  `interp_table`) changes what the code computes — `MAX` replaced by a
+  softmax no longer returns `max`. That is right for an adjoint and wrong
+  for a flux limiter that must stay TVD, so it is a modelling decision,
+  never a default. Each relaxation carries its convergence limit and its
+  bias in the docstring; both are pinned by tests rather than asserted.
+- **`--smoothing none|guarded|smooth`** on `fortranspire translate`,
+  defaulting to `none`. A translation that silently changes the model is
+  worse than one that is honestly non-differentiable. Under `smooth`,
+  every applied relaxation is named in the emitted code.
+- **`FORT031` — non-smooth construct**, detected by `analyze` and labelled
+  by `explain`, from the same catalogue the emission prompt embeds, so a
+  construct cannot be detected without a documented replacement or offered
+  to the model without being detectable. Comment tails are stripped first,
+  and each construct is reported once per file rather than once per use.
+  Two entries have no replacement on purpose: `FLOOR`/`NINT` are the class
+  finite differences provably cannot see — analytic and numerical both
+  read zero — so the static rule is the only way to catch them; and
+  `DO WHILE` becomes `lax.while_loop`, which is not reverse-mode
+  differentiable in JAX.
+
 ### Changed
 
 - **`fortranspire translate` now routes through the Phase 2 graph** and

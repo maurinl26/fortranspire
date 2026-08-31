@@ -21,6 +21,43 @@ from fortranspire.agent.nodes_jax._state import JaxKernelInfo, Phase2State
 _PROMPT_VERSION = os.getenv("FORTRANSPIRE_JAX_PROMPT_VERSION", "v1")
 _PROMPT_LANG = os.getenv("FORTRANSPIRE_PROMPT_LANG", "en")
 
+# How far the emitted kernel may go to become differentiable.
+#
+#   none      faithful translation. Gradients may be zero or undefined
+#             where the Fortran was non-smooth. The default, because a
+#             translation that silently changes the model is worse than
+#             one that is honestly non-differentiable.
+#   guarded   guards only — `safe_sqrt`, `safe_divide`, guarded `where`.
+#             Forward values are unchanged wherever the original was
+#             defined. Repairs a translation; decides nothing.
+#   smooth    relaxations too — softmax for MAX, pseudo-Huber for ABS.
+#             **Forward values change.** That is a modelling decision, so
+#             it is opt-in and every applied relaxation is reported.
+SMOOTHING_MODES = ("none", "guarded", "smooth")
+
+_INSTRUCTIONS = {
+    "none": (
+        "Translate faithfully. Do **not** substitute a smooth approximation for a "
+        "non-smooth construct: keep `MAX` as `jnp.maximum`, `ABS` as `jnp.abs`. "
+        "The gradient may be one-sided or zero — that is the correct answer for a "
+        "faithful translation, and the caller was told."
+    ),
+    "guarded": (
+        "Apply **guards only**. A guard keeps the forward values identical wherever "
+        "the original was defined and stops a NaN or an infinite derivative appearing "
+        "in the untaken branch of a `where`. Use `safe_sqrt`, `safe_divide`, "
+        "`safe_log`. Do **not** relax `MAX`, `MIN`, `ABS` or a threshold — those "
+        "change what the code computes."
+    ),
+    "smooth": (
+        "Apply guards **and** relaxations. A relaxation changes what the code "
+        "computes, so use the library forms with their explicit parameter and name "
+        "each one you applied in a comment on the line, e.g. "
+        "`# relaxed: MAX -> smooth_max(beta=50)`. The caller has asked for a "
+        "differentiable model, not a faithful one."
+    ),
+}
+
 
 def _render_hints(kernel: JaxKernelInfo) -> str:
     hints = kernel.get("hints") or []
@@ -31,13 +68,22 @@ def _render_hints(kernel: JaxKernelInfo) -> str:
 
 def jax_kernel_agent(state: Phase2State) -> dict:
     """LLM: translate each functionalizable routine into a JAX function."""
+    from fortranspire.jax_smooth import catalogue_for_prompt
     from fortranspire.llm import get_llm
     from fortranspire.prompts.loader import load_prompt
     from langchain_core.messages import HumanMessage, SystemMessage
 
+    smoothing = (state.get("smoothing") or "none").lower()
+    if smoothing not in SMOOTHING_MODES:
+        print(f"  WARNING: unknown smoothing={smoothing!r}, falling back to 'none'")
+        smoothing = "none"
+
     print(f"\n{SEP}")
-    print("  [JAX kernel] Emitting against the derived signature")
+    print(f"  [JAX kernel] Emitting against the derived signature — smoothing: {smoothing}")
     print(SEP)
+    if smoothing == "smooth":
+        print("  Relaxations change the forward values. Applied ones are named in "
+              "the emitted code.")
 
     # Reasoning stage: choosing `scan` over a vectorised expression, or
     # guarding an unsafe branch, is a semantic decision — a wrong call is
@@ -63,6 +109,9 @@ def jax_kernel_agent(state: Phase2State) -> dict:
                 signature=kernel["jax_signature"],
                 hints=_render_hints(kernel),
                 fortran_code=kernel["fortran_code"],
+                smoothing_mode=smoothing,
+                smoothing_instruction=_INSTRUCTIONS[smoothing],
+                smoothing_catalogue=catalogue_for_prompt(),
             )
         )
 

@@ -67,6 +67,16 @@ RULES: dict[str, dict[str, str]] = {
         "summary": "COMMON block detected — incompatible with PURE/ELEMENTAL",
         "help": "Replace COMMON with a MODULE of explicit arguments; the LLM extractor handles this.",
     },
+    "FORT031": {
+        "name": "NonSmoothConstruct",
+        "severity": "note",
+        "summary": "Non-smooth construct — differentiable only after a guard or a relaxation",
+        "help": (
+            "See fortranspire.jax_smooth for the replacement and the limit it "
+            "converges to. A relaxation changes what the code computes, so it is "
+            "opt-in via `--smoothing smooth`, never applied silently."
+        ),
+    },
     "FORT030": {
         "name": "JaxPurity",
         "severity": "note",
@@ -152,6 +162,32 @@ def _line_of_routine(source: str, name: str) -> int | None:
 
 # ── Core ────────────────────────────────────────────────────────────────────
 
+# Comment tails would otherwise make `! use MAX here` a finding.
+_COMMENT_RE = re.compile(r"!.*$", re.MULTILINE)
+
+
+def _non_smooth_constructs(source: str) -> list[tuple[str, str, int | None]]:
+    """Find the non-smooth constructs present, from the shared catalogue.
+
+    Returns ``(key, note, line)`` per construct found, at most once each —
+    a kernel using MAX forty times needs one finding, not forty.
+    """
+    from fortranspire.jax_smooth import NON_SMOOTH
+
+    stripped = _COMMENT_RE.sub("", source)
+    found: list[tuple[str, str, int | None]] = []
+
+    for entry in NON_SMOOTH:
+        match = re.search(entry.pattern, stripped, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            continue
+        line = stripped.count("\n", 0, match.start()) + 1
+        target = entry.replacement or "no direct replacement"
+        found.append((entry.key, f"{entry.why} — {target}", line))
+
+    return found
+
+
 def _jax_verdict(kernel: dict) -> tuple[str, str]:
     """Ask the Phase 2 functionalize node whether this routine can be pure.
 
@@ -227,6 +263,14 @@ def analyze_file(path: str) -> FileReport:
         line = _line_of(src, rf"COMMON\s*/\s*{re.escape(name)}\s*/")
         report.findings.append(
             _make_finding("FORT003", abspath, f"COMMON block `/{name}/`", line=line)
+        )
+
+    # ── Differentiability of the source (issue #73) ───────────────────
+    # File-level: a construct is a property of the source text, and the
+    # same MAX often spans several routines.
+    for key, note, line in _non_smooth_constructs(src):
+        report.findings.append(
+            _make_finding("FORT031", abspath, f"`{key.upper()}` — {note}", line=line)
         )
 
     # ── Per-routine findings ──────────────────────────────────────────

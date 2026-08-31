@@ -18,7 +18,7 @@ def _read_file(filepath: str) -> str:
         sys.exit(1)
 
 
-def translate_file(filepath: str) -> int:
+def translate_file(filepath: str, *, smoothing: str = "none") -> int:
     """Phase 2 — Fortran → functional refactoring → JAX (issue #73).
 
     Runs ``translation_app_phase2``: the graph that derives the functional
@@ -37,7 +37,10 @@ def translate_file(filepath: str) -> int:
     from fortranspire.agent.translation_graph_phase2 import translation_app_phase2
 
     print("\n🔬 Phase 2 — Fortran → functional → JAX")
-    print(f"   Input : {filepath}")
+    print(f"   Input     : {filepath}")
+    print(f"   Smoothing : {smoothing}")
+    if smoothing == "smooth":
+        print("   Relaxations change the forward values — this is a modelling choice.")
     code = _read_file(filepath)
     initial_state = {
         "fortran_filepath": filepath,
@@ -45,6 +48,7 @@ def translate_file(filepath: str) -> int:
         "ast_info": {},
         "kernel_results": [],
         "is_program": False,
+        "smoothing": smoothing,
         "executed_agents": [],
     }
     final_state = translation_app_phase2.invoke(initial_state)
@@ -215,10 +219,21 @@ def _translate_main():
         ),
     )
     parser.add_argument("filepath", help="Path to the .f90 Fortran file")
+    parser.add_argument(
+        "--smoothing", choices=("none", "guarded", "smooth"), default="none",
+        help=(
+            "How far to go for gradients. 'none' (default): faithful translation; "
+            "gradients may be zero or one-sided where the Fortran was non-smooth. "
+            "'guarded': NaN and infinite-derivative guards only — forward values "
+            "unchanged. 'smooth': also relax MAX/MIN/ABS/thresholds — this CHANGES "
+            "what the code computes and is a modelling decision, so applied "
+            "relaxations are named in the emitted code."
+        ),
+    )
     args = parser.parse_args()
     # Propagate the gradient-check verdict: a failed check must fail the
     # command, not just print a warning (issue #73).
-    return translate_file(args.filepath)
+    return translate_file(args.filepath, smoothing=args.smoothing)
 
 
 def run_translate():

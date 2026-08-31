@@ -20,6 +20,19 @@ def graph():
     return translation_app_phase2.get_graph()
 
 
+
+def _smoothing_kwargs() -> dict:
+    """The smoothing placeholders every render of this prompt needs."""
+    from fortranspire.agent.nodes_jax.jax_kernel import _INSTRUCTIONS
+    from fortranspire.jax_smooth import catalogue_for_prompt
+
+    return {
+        "smoothing_mode": "none",
+        "smoothing_instruction": _INSTRUCTIONS["none"],
+        "smoothing_catalogue": catalogue_for_prompt(),
+    }
+
+
 def node_names(graph) -> list[str]:
     return [n for n in graph.nodes if not n.startswith("__")]
 
@@ -105,6 +118,7 @@ def test_jax_prompt_exists_and_renders(lang):
     text = load_prompt(
         "jax_kernel", version="v1", lang=lang,
         signature="def k(x) -> y", hints="- none", fortran_code="SUBROUTINE k",
+        **_smoothing_kwargs(),
     )
     assert "def k(x) -> y" in text
     assert "{signature}" not in text and "{hints}" not in text
@@ -121,6 +135,7 @@ def test_prompt_carries_the_where_guard_rule(lang):
     text = load_prompt(
         "jax_kernel", version="v1", lang=lang,
         signature="s", hints="h", fortran_code="f",
+        **_smoothing_kwargs(),
     ).lower()
     assert "where" in text
     assert "nan" in text
