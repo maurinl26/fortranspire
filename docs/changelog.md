@@ -7,6 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — Phase 2 rebuilt as functional refactoring → JAX (issue #73)
+
+- **New `functionalize` node** (`agent/nodes_jax/functionalize.py`), the
+  step Phase 2 never had. Deterministic, no LLM. It derives the functional
+  signature from the INTENT map — a subroutine mutates its arguments, a
+  JAX function cannot, so every `INTENT(OUT)`/`INTENT(INOUT)` argument
+  becomes a return value — and issues a purity verdict (`pure` /
+  `threaded` / `blocked`) from the `has_io` / `has_save` flags Loki
+  already computes. `PURE`/`ELEMENTAL` is Fortran's own word for
+  functional purity, so the gate was free and Phase 2 was not using it.
+  A routine that cannot be pure is reported, never silently ported.
+- **New `gradcheck` node**, blocking. The previous Phase 2 validation ran
+  syntax → bytecode → `exec` → `make_jaxpr`, which together prove the code
+  *traces* — not that its gradients are right, though differentiability is
+  the entire reason to target JAX. It now compares `jax.grad` against
+  central finite differences, in float64, probing a few random entries per
+  array. Catches the NaN-gradient from an unguarded `jnp.where` (the
+  classic translated-Fortran defect, where an `IF` guarded a `sqrt`),
+  silently detached gradients, and kernels that raise under `grad`.
+  It also checks `jit`, deliberately: outside `jit`, reverse-mode traces
+  with a tracer carrying a concrete primal, so a Python `if` on a traced
+  value resolves against it and the gradient looks correct — then the
+  kernel raises the first time anyone jits it.
+  **Documented limitation**, pinned by a test: finite differences see the
+  same function autodiff does, so a locally flat transformation (`floor`,
+  `round`, an integer cast) yields zero on both sides and passes. A pass
+  is not a proof of differentiability in general.
+- **New graph** `translation_graph_phase2.py`:
+  `init → parser → extractor → functionalize → jax_kernel → gradcheck`.
+  The first three nodes are the Phase 1 ones, reused rather than forked —
+  parsing is the same work, and the extractor's promotion of `COMMON` /
+  `SAVE` state to explicit arguments is the first half of
+  functionalisation whatever the target. Two LLM calls maximum.
+- **Externalised JAX prompts** at `prompts/jax_kernel/{en,fr}/v1.md`.
+  Phase 2's prompts were inline in a 1 601-line module, so they were
+  neither versioned nor translatable, unlike every other prompt family
+  (issue #3).
+- **`FORT030` — JAX portability verdict** surfaced by `analyze` and
+  `explain`, reusing the `functionalize` rules rather than restating them,
+  so a quote cannot promise a port the pipeline then refuses. Emitted only
+  for routines that are *not* pure: annotating the clean ones would bury
+  real findings in Code Scanning.
+
+### Changed
+
+- **`fortranspire translate` now routes through the Phase 2 graph** and
+  **returns a non-zero exit code when the gradient check fails**. A kernel
+  that traces with a wrong gradient is silently wrong exactly where the
+  caller relies on it, so the check gates the command.
+- `agent/translation_graph.py` is marked superseded for the JAX path. It
+  stays importable: it still carries the Phase 3-5 experiments (halo
+  exchange, reproducibility, surrogate models) that have no other home.
+
+### Fixed
+
+- **`FORT010` and `FORT011` rendered unlabelled in the port-cost report.**
+  `explain` keeps its risk-label map in sync with `analyze` by hand, and
+  the two toolchain rules were never added. Found by a new test asserting
+  the two stay in sync — the report is what a client reads before paying.
+
+
 ### Added — agent surfaces on GitHub
 
 - **GitHub App** (`fortranspire github-app`, issue #50). A Starlette

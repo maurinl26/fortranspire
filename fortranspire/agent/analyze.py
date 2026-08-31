@@ -67,6 +67,16 @@ RULES: dict[str, dict[str, str]] = {
         "summary": "COMMON block detected — incompatible with PURE/ELEMENTAL",
         "help": "Replace COMMON with a MODULE of explicit arguments; the LLM extractor handles this.",
     },
+    "FORT030": {
+        "name": "JaxPurity",
+        "severity": "note",
+        "summary": "JAX portability — can this routine become a pure function?",
+        "help": (
+            "Phase 2 needs a functional interface: every written argument becomes a "
+            "return value, and hidden state must be threaded explicitly. `blocked` "
+            "means the routine cannot be a JAX function as written."
+        ),
+    },
     "FORT004": {
         "name": "LoopCarriedDep",
         "severity": "warning",
@@ -141,6 +151,19 @@ def _line_of_routine(source: str, name: str) -> int | None:
 
 
 # ── Core ────────────────────────────────────────────────────────────────────
+
+def _jax_verdict(kernel: dict) -> tuple[str, str]:
+    """Ask the Phase 2 functionalize node whether this routine can be pure.
+
+    Imported here rather than restated: the definition of "pure" has to
+    match what the Phase 2 pipeline will actually do, or `explain` quotes
+    a port the pipeline then refuses.
+    """
+    from fortranspire.agent.nodes_jax.functionalize import _split_by_intent, _verdict
+
+    _, outputs, _ = _split_by_intent(kernel.get("intent_map") or {})
+    return _verdict(kernel, outputs)
+
 
 def analyze_file(path: str) -> FileReport:
     """Run parser_phase1 on a single .f90 file and return its findings."""
@@ -225,6 +248,23 @@ def analyze_file(path: str) -> FileReport:
             report.findings.append(
                 _make_finding("FORT004", abspath, f"routine `{routine}` has a suspected loop-carried dependency",
                               routine=routine, line=rline)
+            )
+
+        # JAX portability (issue #73). Reuses the Phase 2 functionalize node
+        # rather than restating its rules: "can this be a pure function?"
+        # must have one answer, and `explain` has to give it before anyone
+        # is quoted for a Phase 2 port.
+        verdict, reason = _jax_verdict(kernel)
+        if verdict != "pure":
+            # Only the routines that need work are reported. A clean routine
+            # needs no annotation, and emitting one per routine would bury a
+            # real finding under a wall of "this is fine" in Code Scanning.
+            report.findings.append(
+                _make_finding(
+                    "FORT030", abspath,
+                    f"routine `{routine}` is `{verdict}` for a JAX port — {reason}",
+                    routine=routine, line=rline,
+                )
             )
 
     return report

@@ -54,6 +54,12 @@ _RISK_LABELS: dict[str, str] = {
     "FORT007": "REAL/INTEGER without KIND",
     "FORT008": "Derived TYPE (AoS — consider SoA)",
     "FORT009": "Loki parse failure",
+    # Toolchain findings — absent from this map until the analyze/explain
+    # sync test caught it, so they rendered unlabelled in the port-cost
+    # report a client reads before paying.
+    "FORT010": "No Fortran compiler on PATH (cannot validate output)",
+    "FORT011": "!$acc present but no OpenACC-capable compiler available",
+    "FORT030": "JAX portability verdict (Phase 2)",
 }
 
 
