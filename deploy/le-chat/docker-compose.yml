@@ -1,0 +1,63 @@
+# Public TLS deployment of the fortranspire MCP server for the Le Chat
+# connector directory (issue #51). A single small EU VPS is enough — this
+# does not depend on the European Weather Cloud tenancy (#43).
+#
+#   1. Point an A record at the host: mcp.example.eu -> <host IP>.
+#   2. Copy .env.example to .env and fill FORTRANSPIRE_DOMAIN, API_KEY,
+#      MISTRAL_API_KEY (only if you later enable authenticated LLM tools),
+#      FORTRANSPIRE_AUDIT_SECRET.
+#   3. docker compose --env-file .env up -d
+#   4. curl https://$FORTRANSPIRE_DOMAIN/health  -> {"status":"ok",...}
+#
+# The public connector exposes only the deterministic, zero-token,
+# zero-write inline-source tools (see integration/le-chat-connector.json);
+# the token-spending tools stay off this surface.
+
+services:
+  fortranspire:
+    build:
+      context: ../..
+      dockerfile: containers/Dockerfile
+    container_name: fortranspire-mcp
+    expose:
+      - "8000"                       # internal only; Caddy is the front door
+    environment:
+      MCP_HOST: 0.0.0.0
+      MCP_PORT: 8000
+      # Auth: fail-closed. With API_KEY set the SSE endpoint refuses any
+      # request without a matching bearer token (verified in tests).
+      API_KEY: ${API_KEY:?set API_KEY — the public endpoint must be authenticated}
+      # HMAC-signed audit log; persisted on the named volume below.
+      FORTRANSPIRE_AUDIT_SECRET: ${FORTRANSPIRE_AUDIT_SECRET:?set a 256-bit random secret}
+      FORTRANSPIRE_AUDIT_PATH: /audit/audit.jsonl
+      # The jail stays on (SSE default). A hosted server has no user files
+      # to analyze by path anyway — the connector uses inline-source tools.
+      AGENT_WORKSPACE: /workspace
+      # Cap a single inline request so one caller cannot paste a whole tree.
+      FORTRANSPIRE_MAX_SOURCE_BYTES: ${FORTRANSPIRE_MAX_SOURCE_BYTES:-1000000}
+    volumes:
+      - audit:/audit
+      - workspace:/workspace
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: fortranspire-caddy
+    depends_on:
+      - fortranspire
+    ports:
+      - "80:80"                      # ACME HTTP-01 challenge
+      - "443:443"
+    environment:
+      FORTRANSPIRE_DOMAIN: ${FORTRANSPIRE_DOMAIN:?set FORTRANSPIRE_DOMAIN, e.g. mcp.example.eu}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data            # certificates survive a redeploy
+      - caddy_config:/config
+    restart: unless-stopped
+
+volumes:
+  audit:
+  workspace:
+  caddy_data:
+  caddy_config:

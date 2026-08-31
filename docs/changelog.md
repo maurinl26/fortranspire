@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — hosted Le Chat connector (issue #51, split into #76/#77)
+
+- **Inline-source MCP tools** — `analyze_source`, `explain_source`,
+  `build_call_graph_source` (`fortranspire/server.py`). The path-taking
+  tools assume the client and server share a filesystem, which a hosted
+  SSE endpoint does not: a Le Chat user's Fortran is on their machine.
+  These take the source text, materialise it in a jailed temp file under
+  the workspace, run the **same** deterministic code path, and delete it
+  before returning. `filename` only selects the dialect (`.f` fixed form,
+  `.F90` triggers cpp); a directory component in it is ignored, and an
+  oversized paste (>1 MB) is refused. Zero LLM, zero token, zero persisted
+  write.
+- **The Le Chat connector now exposes only the safe surface.**
+  `integration/le-chat-connector.json` previously listed
+  `translate_kernel_gpu`, `translate_kernel`, `profile_kernels` and
+  `ask_agent` — every one of which spends the operator's Mistral key or
+  writes files, which is unacceptable on a public directory endpoint.
+  Replaced by the three deterministic inline-source tools, with a
+  `public_surface_note` recording why the token-spending ones are absent.
+- **TLS deployment** at `deploy/le-chat/` — a Caddy reverse proxy
+  (automatic Let's Encrypt) fronting the MCP container, plus compose and
+  `.env.example`. A small EU VPS is enough; this does **not** depend on
+  the European Weather Cloud tenancy (#43). Documented in
+  `docs/integrations/le-chat.md`.
+- Tests: `tests/server/test_inline_source.py` (inline tools, fixed-form
+  and cpp handling, hosted-safety guards, and connector-surface guards
+  asserting no token-spending or file-writing tool is publicly exposed).
+
+
 ### Fixed — found on the first real target (CMAQ, USEPA)
 
 Three defects, all surfaced by running the free deterministic path over

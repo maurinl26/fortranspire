@@ -53,6 +53,7 @@ integrations/ide-interactive-mode
 integrations/claude-code-action
 integrations/copilot-coding-agent
 integrations/github-app
+integrations/le-chat
 ```
 
 ```{toctree}
