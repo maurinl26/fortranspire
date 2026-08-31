@@ -14,6 +14,8 @@ Zero LLM calls. Zero token cost. Suitable for sales / RFI / planning.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import argparse
 import contextlib
 import io
@@ -238,7 +240,9 @@ def estimate_paths(paths: Iterable[str]) -> CodebaseEstimate:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(sorted(str(f) for f in p.rglob("*.[fF]90")))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         else:
             files.append(str(p))
     seen: set[str] = set()

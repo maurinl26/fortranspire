@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
-from fortranspire.agent.nodes._common import set_output_root
+from fortranspire.agent.nodes._common import collect_fortran_files, set_output_root
 
 
 @dataclass
@@ -115,7 +115,9 @@ def _walk_paths(paths: Iterable[str]) -> list[str]:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(str(f) for f in p.rglob("*.[fF]90"))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         elif p.is_file():
             files.append(str(p))
     seen: set[str] = set()

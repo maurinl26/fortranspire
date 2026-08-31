@@ -25,6 +25,8 @@ tokens.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import argparse
 import contextlib
 import io
@@ -511,7 +513,9 @@ def _walk(paths: Iterable[str]) -> list[str]:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(sorted(str(f) for f in p.rglob("*.[fF]90")))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         else:
             files.append(str(p))
     seen = set()

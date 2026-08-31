@@ -42,6 +42,22 @@ def parser_phase1(state: Phase1State) -> dict:
         from loki.ir.nodes import VariableDeclaration, Loop, CallStatement
 
         raw_content = Path(filepath).read_text(encoding="utf-8")
+
+        # An uppercase suffix (.F, .F90, .FOR) means "run cpp first" by
+        # Fortran convention. Skipping it makes Loki read `#ifdef` lines as
+        # Fortran and return **zero routines**, which surfaces as a parse
+        # failure rather than as the missing preprocessing pass it is.
+        # Line numbers survive the pass so findings still annotate the
+        # original file.
+        from fortranspire.agent.nodes._preprocess import needs_preprocessing, preprocess
+
+        if needs_preprocessing(filepath):
+            raw_content, note = preprocess(filepath, raw_content)
+            if note:
+                print(f"  WARNING: {note}")
+            else:
+                print(f"  Preprocessed {Path(filepath).name} (cpp, line numbers preserved).")
+
         is_program = bool(re.search(r'^\s*PROGRAM\s+', raw_content, re.IGNORECASE | re.MULTILINE))
 
         if is_program:

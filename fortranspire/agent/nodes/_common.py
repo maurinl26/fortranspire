@@ -77,3 +77,41 @@ def _gpu_compiler() -> str | None:
     if env_fc and shutil.which(env_fc):
         return env_fc
     return None
+
+
+# ── Fortran source discovery ───────────────────────────────────────────────
+# Every verb that walks a directory used to spell its own `*.[fF]90` glob,
+# in six places. All six missed the fixed-form suffixes, which is most of
+# the legacy corpus this project exists for: 525 of CMAQ's Fortran files
+# are `.F`, and `fortranspire explain` on that tree reported "no .f90 /
+# .F90 file found".
+#
+# Case matters. An uppercase suffix additionally means "run cpp first"
+# (see `nodes/_preprocess.py`), so the two sets are listed separately
+# rather than globbed case-insensitively.
+
+FREE_FORM_SUFFIXES = (".f90", ".F90", ".f95", ".F95", ".f03", ".F03", ".f08", ".F08")
+FIXED_FORM_SUFFIXES = (".f", ".F", ".for", ".FOR", ".ftn", ".FTN", ".fpp", ".FPP")
+FORTRAN_SUFFIXES = FREE_FORM_SUFFIXES + FIXED_FORM_SUFFIXES
+
+
+def collect_fortran_files(paths) -> list[str]:
+    """Expand `paths` into a sorted, de-duplicated list of Fortran sources.
+
+    A path that is a file is taken as-is whatever its suffix — an explicit
+    argument is an explicit choice. A directory is walked for every known
+    Fortran suffix.
+    """
+    seen: dict[str, None] = {}
+
+    for raw in paths:
+        path = Path(raw)
+        if path.is_file():
+            seen[str(path)] = None
+        elif path.is_dir():
+            for suffix in FORTRAN_SUFFIXES:
+                for found in path.rglob(f"*{suffix}"):
+                    if found.is_file():
+                        seen[str(found)] = None
+
+    return sorted(seen)

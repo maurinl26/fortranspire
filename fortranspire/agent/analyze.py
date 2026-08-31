@@ -6,6 +6,8 @@ pre-flight check before committing to a full GPU port.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import contextlib
 import io
 import json
@@ -150,10 +152,25 @@ def _help_uri(rule_id: str) -> str:
 # enough for CI annotations; an exact AST mapping is a later optimisation.
 
 def _line_of(source: str, pattern: str, flags: int = re.IGNORECASE) -> int | None:
+    r"""Line number of the first match, counted from the matched *content*.
+
+    Callers write patterns like ``^\s*SUBROUTINE`` to allow indentation.
+    But ``\s`` includes newlines, so with ``re.MULTILINE`` that leading
+    quantifier happily starts the match on an earlier blank line and eats
+    it — reporting a line that is blank, one (or several) above the real
+    declaration. SARIF turns these numbers into GitHub annotations, so the
+    annotation lands on the wrong statement.
+
+    Fixing it here rather than in each pattern means the next caller
+    cannot reintroduce it: skip whatever leading whitespace the match
+    swallowed and count to the first real character.
+    """
     match = re.search(pattern, source, flags | re.MULTILINE)
     if not match:
         return None
-    return source.count("\n", 0, match.start()) + 1
+    matched = match.group(0)
+    offset = len(matched) - len(matched.lstrip())
+    return source.count("\n", 0, match.start() + offset) + 1
 
 
 def _line_of_routine(source: str, name: str) -> int | None:
@@ -320,7 +337,9 @@ def analyze_paths(paths: Iterable[str]) -> list[FileReport]:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(str(f) for f in p.rglob("*.[fF]90"))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         else:
             files.append(str(p))
     return [analyze_file(f) for f in sorted(set(files))]

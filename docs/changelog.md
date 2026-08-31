@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — found on the first real target (CMAQ, USEPA)
+
+Three defects, all surfaced by running the free deterministic path over
+`CCTM/src/gas/ros3/rbsolver.F` — 632 lines of 1990s fixed-form F77.
+
+- **Uppercase-suffix files were never preprocessed.** By Fortran
+  convention `.F` / `.F90` / `.FOR` mean "run cpp first". We did not, so
+  Loki read the `#ifdef` lines as Fortran and returned **zero routines**,
+  which surfaced as `FORT009` "failed to parse" rather than the missing
+  pass it was. 525 of CMAQ's Fortran files carry that suffix and 199 hold
+  live conditionals, so the gap blocked the whole target. New
+  `agent/nodes/_preprocess.py`, wired into the parser.
+  Removed lines are **blanked rather than deleted**: findings carry a line
+  number, the composite action turns it into a GitHub annotation, and
+  `cpp -P` would shift every line past the first `#ifdef`.
+- **Directory scanning ignored fixed-form suffixes.** Six call sites each
+  spelled their own `*.[fF]90` glob, so `.F`, `.f`, `.for` were invisible:
+  `fortranspire explain` on CMAQ's tree reported "no .f90 / .F90 file
+  found" for 525 files. Replaced by one `collect_fortran_files` helper in
+  `nodes/_common.py` covering 16 suffixes.
+- **Reported line numbers were too low.** `_line_of` takes patterns like
+  `^\s*SUBROUTINE`, and `\s` matches newlines, so with `re.MULTILINE` the
+  quantifier started the match on a preceding blank line. `RBSOLVER` was
+  reported at line 25, which is blank; it is at 26. Fixed centrally rather
+  than in each pattern, so the next caller cannot reintroduce it.
+
+Not a defect on our side, recorded for the target: 32 CMAQ `.F` files use
+`include SUBST_CONST`-style aliases that CMAQ's own `bldit_cctm.csh`
+resolves at build time. They need that build step before any tool can
+read them.
+
+
 ### Added — Phase 2 rebuilt as functional refactoring → JAX (issue #73)
 
 - **New `functionalize` node** (`agent/nodes_jax/functionalize.py`), the
