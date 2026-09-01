@@ -22,6 +22,17 @@ gt4py.next counterpart and understand *why* the mapping is what it is.
 
 ---
 
+> **Which model is worth targeting.** gt4py.next handles two horizontal
+> models, and they are not equal. The **unstructured mesh** (Cell / Edge /
+> Vertex + connectivity tables, `neighbor_sum`) is the mature, high-value
+> one — it is what icon4py and Pace are built on and where the modern NWP
+> community is. The **Cartesian horizontal grid** (`Ioff` / `Joff` shifts on
+> a lat-lon grid) is the older, more procedural path, and less obviously
+> worth the effort for the gain. This document keeps it for completeness but
+> leads with the unstructured model. The **vertical** axis (`Koff`,
+> `scan_operator`) is orthogonal and universal — every mesh has a column —
+> so it stays first-class throughout.
+
 ## 1. Why gt4py.next is the right shape for this pipeline
 
 gt4py.next is **functional**, and that is the whole reason it fits.
@@ -183,7 +194,7 @@ def vertical_avg(t: gtx.Field[Dims[K], float64]) -> gtx.Field[Dims[K], float64]:
 `t(Koff[-1])` reads the value one layer below. `Koff[+1]` reads one above.
 At call time the shift needs an offset provider; on the embedded backend that is a `gtx.CartesianConnectivity` (§11). Validation type-checks the operator rather than running it, so it does not depend on this — a driver that executes the operator does.
 
-### Horizontal structured stencil (Cartesian `I`, `J`)
+### Horizontal structured stencil (Cartesian `I`, `J`) — legacy path
 
 ```fortran
 ! Fortran: 2-D five-point Laplacian
@@ -256,7 +267,7 @@ that is a **vertical interval**, handled by the domain or by a
 
 ---
 
-## 7. Unstructured neighbours → connectivity + `neighbor_sum`
+## 7. Unstructured neighbours → connectivity + `neighbor_sum` (the primary horizontal model)
 
 This is where gt4py.next goes beyond OpenACC and beyond a Cartesian
 stencil, and it is the reason the NWP community (ICON, FVM) uses it. On an
@@ -292,11 +303,12 @@ E2C_provider = gtx.as_connectivity([Edge, E2CDim], codomain=Cell,
 edge_flux(cellval, out=flux, offset_provider={"E2C": E2C_provider})
 ```
 
-Detecting this from Fortran is harder than a constant stencil: the pipeline
-must recognise the **indirection** `e2c(e, c)` as a connectivity access
-rather than plain array indexing. Structured stencils (§5) are the first
-milestone; unstructured connectivity is a second, and the detection rubric
-(§9) scores them separately.
+The pipeline recognises the **indirection** `e2c(e, c)` as a connectivity
+access — an ICON-style `X2Y` name is a strong signal — and scores it as a
+**first-class** target (`FORT032` = 3, a construct), because this is the
+model the mature gt4py.next ecosystem is built on. It is not penalised as
+"hard"; the Cartesian horizontal stencil in §5 is the legacy alternative,
+not the baseline.
 
 ---
 

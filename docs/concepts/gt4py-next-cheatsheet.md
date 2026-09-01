@@ -13,6 +13,11 @@ the [Fortran patterns](fortran-patterns.md) summary table.*
 
 The `do i = 1, n` is not translated — it is **removed**.
 
+> Prefer the **unstructured mesh** model (Cell/Edge + connectivity,
+> `neighbor_sum`) — the mature, high-value path (icon4py, Pace). The
+> Cartesian horizontal grid (`Ioff`/`Joff`) is the older, procedural
+> alternative. The vertical `Koff` / `scan_operator` is universal.
+
 ---
 
 ## Correspondence table
@@ -27,9 +32,9 @@ The `do i = 1, n` is not translated — it is **removed**.
 | two outputs | `-> tuple[Field[...], Field[...]]` | tuple return |
 | `real(kind=8)` | `float64` | explicit dtype |
 | `a(k+1)` / `a(k-1)` | `a(Koff[1])` / `a(Koff[-1])` | vertical `FieldOffset` |
-| `a(i+1,j)` | `a(Ioff[1])` | Cartesian `FieldOffset` |
+| `sum(a(e2c(e,:)))` | `neighbor_sum(a(E2C), axis=E2CDim)` | **unstructured connectivity (the primary model)** |
 | `if (c) x=p else x=q` | `where(c, p, q)` | no `if` in an operator |
-| `sum(a(e2c(e,:)))` | `neighbor_sum(a(E2C), axis=E2CDim)` | unstructured connectivity |
+| `a(i+1,j)` | `a(Ioff[1])` | Cartesian `FieldOffset` (legacy horizontal grid) |
 | `x(k)=f(x(k-1))` | `@scan_operator(axis=K, forward=True)` | vertical recurrence |
 | `write` / `read` / `print` | — | **does not map** |
 | `save` / module state | — | **does not map** |
