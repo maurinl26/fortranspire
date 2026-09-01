@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`docs/concepts/jax-gt4py-cheatsheet.md`** — a side-by-side of the two
+  functional targets (Phase 2 JAX and GT4Py). Both emit from the same
+  `functionalize` node, so the page shows where they converge (the
+  interface, the purity gate, `where`, `lax.scan` ↔ `scan_operator`) and
+  where they diverge — most importantly that JAX is differentiable and
+  gt4py.next is not — with a "which target to choose" table.
+
+
 ### Added — GT4Py emitter (issue #42)
 
 - **`fortranspire gt4py`** — Fortran → gt4py.next field operators. The
