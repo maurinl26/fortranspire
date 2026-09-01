@@ -271,6 +271,70 @@ def run_port_batch():
 # only for the legacy `agent-*` aliases.
 
 
+def _domain_main():
+    """Interactive domain agent — geometry catalogue + decomposition proposer.
+
+    Geometry cannot be read from a kernel (it is a modelling choice), so the
+    resolution is given by the user; the stencil **halo** is read from the
+    Fortran when a kernel is supplied (via the typed domain model).
+    """
+    from fortranspire.agent.geometry import (
+        catalogue_table,
+        identify,
+        propose_decomposition,
+    )
+
+    parser = argparse.ArgumentParser(
+        description="🌍 Domain geometry catalogue + software-decomposition proposer",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  fortranspire domain --list\n"
+            "  fortranspire domain O1280 --ranks 1024\n"
+            "  fortranspire domain nside=1024 --ranks 512 --kernel src/stencil.f90\n"
+        ),
+    )
+    parser.add_argument("resolution", nargs="?",
+                        help="Grid resolution, e.g. O1280 / nside=1024 / C768 / R2B9")
+    parser.add_argument("--list", action="store_true", help="List the geometry catalogue")
+    parser.add_argument("--ranks", type=int, default=1024, help="MPI ranks (default 1024)")
+    parser.add_argument("--levels", type=int, default=137, help="Vertical levels (default 137)")
+    parser.add_argument("--fields", type=int, default=10, help="3-D fields for the memory estimate")
+    parser.add_argument("--kernel", help="Fortran kernel — its stencil halo feeds the decomposition")
+    parser.add_argument("--halo", type=int, default=None, help="Stencil halo (overrides --kernel)")
+    args = parser.parse_args()
+
+    if args.list or not args.resolution:
+        print("# Geometry catalogue\n")
+        print(catalogue_table())
+        if not args.resolution:
+            print("\nGive a resolution to propose a decomposition, "
+                  "e.g. `fortranspire domain O1280 --ranks 1024`.")
+        return 0
+
+    if identify(args.resolution) is None:
+        print(f"Unknown resolution {args.resolution!r}. Known families:", file=sys.stderr)
+        print(catalogue_table(), file=sys.stderr)
+        return 2
+
+    # Halo: explicit flag, or read from the kernel's stencil, or 0.
+    halo = args.halo
+    if halo is None and args.kernel:
+        from fortranspire.agent.domain_model import build_domain_model
+
+        model = build_domain_model(_read_file(args.kernel))
+        halo = model.max_halo
+        print(f"# stencil halo {halo} read from {args.kernel}\n")
+    halo = halo or 0
+
+    decomp = propose_decomposition(
+        args.resolution, n_ranks=args.ranks, halo=halo,
+        levels=args.levels, fields=args.fields,
+    )
+    print(decomp.render())
+    return 0
+
+
 def _gt4py_main():
     """Fortran → gt4py.next field operators (unified `fortranspire gt4py`)."""
     parser = argparse.ArgumentParser(
