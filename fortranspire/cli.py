@@ -34,6 +34,7 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "analyze":    ("fortranspire.agent.analyze",  "main"),
     "doc":        ("fortranspire.agent.document", "main"),
     "explain":    ("fortranspire.agent.explain",  "main"),
+    "recon":      ("fortranspire.agent.recon",    "main"),
     "format":     ("fortranspire.agent.format",   "main"),
     "port-batch": ("fortranspire.agent.batch",    "main"),
     "graph":      ("fortranspire.agent.call_graph", "main"),
@@ -65,6 +66,7 @@ Commands:
   analyze     Static analysis (Loki AST, no LLM, CI-friendly)
   doc         Documentation generator (inline !> + Sphinx)
   explain     Pre-flight cost + risk estimate (no LLM, no tokens)
+  recon       Arrival triage: ranked porting worklist for a repo (no LLM)
   format      Fortran source formatter (fprettify wrapper)
   graph       Module-level call-graph report (Mermaid flowchart)
   diff        Semantic before/after diff viewer (text or HTML)
