@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — nominal resolution (km) for every geometry (issue #88)
+
+- The geometry catalogue and the decomposition report now show the
+  approximate horizontal grid spacing in km, `2·R·√(π/P)` from the point
+  count — verified against the operational grids (O1280 ≈ 9 km, HEALPix
+  nside=1024 ≈ 6 km, C768 ≈ 12 km, R2B9 ≈ 5 km). This closes the
+  resolution↔km item of the interactive domain agent.
+
+
 ### Added — spectral truncation as an alias, not a geometry (issue #88)
 
 - `TCo1279`, `TL1279` and similar spectral-truncation labels now resolve to

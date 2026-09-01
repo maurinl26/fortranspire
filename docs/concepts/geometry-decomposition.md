@@ -16,14 +16,18 @@ comes from the kernel, and the agent proposes the software decomposition.
 Point-count formulas verified against ECMWF Atlas (Gaussian family) and
 standard references; `N` is each family's resolution parameter.
 
-| Geometry | Naming | Points | Structure | Mesh library |
-| -------- | ------ | ------ | --------- | ------------ |
-| Octahedral reduced Gaussian | `O<N>` — N Gaussian latitudes | `4N² + 36N` | unstructured | ECMWF Atlas |
-| Regular Gaussian | `F<N>` — nx=4N, ny=2N | `8N²` | structured | ECMWF Atlas |
-| HEALPix | `nside` (power of 2) | `12·nside²` | unstructured | healpy / Atlas |
-| Cubed sphere | `C<N>` — N per face edge | `6N²` | block-structured | FV3 / GFDL |
-| Icosahedral | `R2B<k>` — root 2, k bisections | `80·4^k` | unstructured | ICON |
-| Regular lat-lon | `<dlon>x<dlat>` degrees | `(360/dlon)(180/dlat)` | structured | — |
+| Geometry | Naming | Points (example) | ~Resolution | Mesh library |
+| -------- | ------ | ---------------- | ----------- | ------------ |
+| Octahedral reduced Gaussian | `O<N>` = `4N²+36N` | O1280 → 6.6 M | ~9 km | ECMWF Atlas |
+| Regular Gaussian | `F<N>` = `8N²` | F1280 → 13.1 M | ~6 km | ECMWF Atlas |
+| HEALPix | `nside` = `12·nside²` | nside=1024 → 12.6 M | ~6 km | healpy / Atlas |
+| Cubed sphere | `C<N>` = `6N²` | C768 → 3.5 M | ~12 km | FV3 / GFDL |
+| Icosahedral (ICON) | `R2B<k>` = `80·4^k` | R2B9 → 21.0 M | ~5 km | ICON |
+| Regular lat-lon | `<dlon>x<dlat>` | 0.25° → 1.0 M | ~22 km | — |
+
+The `~Resolution` is the nominal grid spacing from the point count,
+`2·R·√(π/P)` — verified against the operational grids (O1280 ≈ 9 km,
+R2B9 ≈ 5 km).
 
 ```bash
 fortranspire domain --list                         # the catalogue
