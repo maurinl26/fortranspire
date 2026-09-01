@@ -15,7 +15,11 @@ Two modes:
   fortranspire bench output/<kernel>/                   → emit JSON to stdout
   fortranspire bench --compare baseline.json output/X/  → fail if regressed
 
-Regression policy: per-metric tolerance, default ±10 % on numeric
+Regression policy: per-metric tolerance, default ±10 % on the
+**structural** numeric metrics (file/routine/pragma counts, generated
+bytes, LLM cost). The wall-clock `gfortran_seconds` is reported but not
+gated — a few milliseconds of runner jitter must not fail a build (#72).
+Legacy line: per-metric tolerance, default ±10 % on numeric
 metrics. Override via ``--tolerance 0.15`` for a 15 % bound, or
 ``--strict`` for ±5 %. Counts that *should* increase (more routines
 extracted, more validation steps run) only fail when they decrease
@@ -192,8 +196,17 @@ _METRICS_NO_DROP = (
 )
 _METRICS_NO_RISE = (
     "llm_calls", "llm_prompt_tokens", "llm_completion_tokens",
-    "llm_cost_usd", "gfortran_seconds",
+    "llm_cost_usd",
 )
+
+# `gfortran_seconds` is deliberately NOT gated (issue #72). It is a
+# wall-clock measure of compiling a tiny fixture — a handful of
+# milliseconds — so scheduler jitter on a shared CI runner routinely moves
+# it past a ±10 % bound and fails a build for nothing. A flaky gate teaches
+# people to ignore red, which is worse than the metric it protects. It is
+# still measured and shown in the report; it just never counts as a
+# regression. The structural metrics above are deterministic and are what
+# the gate actually guards.
 
 
 @dataclass
