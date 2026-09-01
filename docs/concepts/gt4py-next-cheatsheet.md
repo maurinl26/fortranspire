@@ -113,11 +113,12 @@ add.with_backend(gtfn.run_gtfn)(a, b, out=c, …)      # gtfn_cpu
 add.with_backend(gtfn.run_gtfn_gpu)(a, b, out=c, …)  # gtfn_gpu
 ```
 
-> ⚠️ The exact backend import path and a few API-surface spellings
-> (Cartesian `Ioff`/`Joff`, `scan_operator` signature, `DimensionKind`
-> values) must be confirmed against the **pinned** gt4py.next version —
-> see [patterns §11](gt4py-next-patterns.md). The *shape* of every
-> correspondence above is stable; only the surface spelling moves.
+> The API above is verified against gt4py.next 1.2.1
+> ([patterns §11](gt4py-next-patterns.md)). One execution detail stays
+> version-dependent: running a Cartesian-offset operator needs a
+> `CartesianConnectivity` offset provider. Validation type-checks the
+> operator (no execution), so it does not depend on that; a driver that
+> runs it pins the provider per backend.
 
 ---
 

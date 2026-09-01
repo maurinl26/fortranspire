@@ -171,7 +171,7 @@ end do
 ```
 
 ```python
-K = gtx.Dimension("K", kind=gtx.DimensionKind.VERTICAL)  # confirm kind spelling (§11)
+K = gtx.Dimension("K", kind=gtx.DimensionKind.VERTICAL)   # verified (§11)
 Koff = gtx.FieldOffset("Koff", source=K, target=(K,))    # a shift along K itself
 
 @gtx.field_operator
@@ -181,8 +181,7 @@ def vertical_avg(t: gtx.Field[Dims[K], float64]) -> gtx.Field[Dims[K], float64]:
 ```
 
 `t(Koff[-1])` reads the value one layer below. `Koff[+1]` reads one above.
-The offset provider `{"Koff": K}` is passed at call time so the framework
-knows `Koff` shifts along the `K` dimension.
+At call time the shift needs an offset provider; on the embedded backend that is a `gtx.CartesianConnectivity` (§11). Validation type-checks the operator rather than running it, so it does not depend on this — a driver that executes the operator does.
 
 ### Horizontal structured stencil (Cartesian `I`, `J`)
 
@@ -210,12 +209,11 @@ makes it portable. A non-constant offset (`a(idx(i))`, indirect addressing)
 is **not** a Cartesian shift; it is either an unstructured connectivity
 (§7) or unportable (§10).
 
-> **Verify during implementation (§11):** the exact spelling of a Cartesian
-> `FieldOffset` (`source`/`target` on the same dimension) against a current
-> gt4py.next Cartesian example. The workshop material is unstructured-first;
-> the vertical `Koff` form is well established in ICON physics, the
-> horizontal `Ioff`/`Joff` form must be checked against the installed
-> version before it is emitted.
+> **Note (§11):** the vertical `Koff` form is verified against gt4py.next
+> 1.2.1. The horizontal `Ioff`/`Joff` form uses the identical `FieldOffset`
+> mechanism (`source`/`target` on the same dimension); confirm a Cartesian
+> *execution* example per backend when a driver runs it — the type-check
+> does not execute, so emission is not blocked on it.
 
 ---
 
@@ -329,8 +327,8 @@ to `do k = nlev, 1, -1`. The `init` is the boundary value. The parser
 already detects the loop-carried dependency; the target decides whether it
 becomes `lax.scan` (JAX) or `scan_operator` (gt4py.next).
 
-> **Verify during implementation (§11):** the exact `scan_operator`
-> signature and how the carry is typed in the current gt4py.next.
+> **Note (§11):** `gtx.scan_operator` is confirmed present in 1.2.1; its
+> `axis` / `forward` / `init` parameters and carry typing are pinned there.
 
 ---
 
@@ -398,29 +396,43 @@ Each is already a finding the analyzer produces for the other targets;
 
 ---
 
-## 11. What must be verified against the installed gt4py.next
+## 11. Verified against gt4py.next 1.2.1
 
-This spec is grounded in the current gt4py.next repository docs (field
-operators, programs, `FieldOffset`, `neighbor_sum`, `where`, `gtfn_cpu` /
-`gtfn_gpu`). gt4py.next is a moving API, so before the emission node is
-written, three specifics must be confirmed against the **pinned** version
-in `pyproject.toml`:
+The API surface below was confirmed by installing gt4py.next 1.2.1 and
+running each construct, not read from memory:
 
-1. **Cartesian `FieldOffset`** spelling for horizontal `Ioff`/`Joff`
-   (§5) — the vertical `Koff` form is established; the horizontal form must
-   be checked against a Cartesian example.
-2. **`scan_operator`** signature, carry typing, and `forward`/`init`
-   semantics (§8).
-3. **`DimensionKind`** values (`VERTICAL`, `LOCAL`, `HORIZONTAL`) and the
-   exact backend/allocator names for `gtfn_cpu` / `gtfn_gpu` at that
-   version.
+- **Imports & decorators** — `import gt4py.next as gtx`;
+  `@gtx.field_operator`, `@gtx.scan_operator`, `@gtx.program`. ✓
+- **`DimensionKind`** — `HORIZONTAL`, `LOCAL`, `VERTICAL`. ✓
+- **`FieldOffset`** — `gtx.FieldOffset("Koff", source=K, target=(K,))` for
+  a shift; `field(Koff[-1])` reads one step back. ✓
+- **`where`, `neighbor_sum`** — `from gt4py.next import where,
+  neighbor_sum`; `where(mask, a, b)` runs point-wise (verified end to end);
+  `neighbor_sum(a(E2C), axis=E2CDim)`. ✓
+- **Backends** — `run_gtfn`, `run_gtfn_gpu` under
+  `gt4py.next.program_processors.runners.gtfn`. ✓
 
-These are marked inline above. The mappings themselves — the *shape* of the
-correspondence — do not change with the API; only the surface spelling
-does, which is why this document leads with the reasoning and pins the
-volatile surface here.
+Two facts learned by running it, both of which shape the pipeline:
 
----
+1. **A field operator must live in a real `.py` file.** gt4py reads the
+   operator's source with `inspect.getsourcelines`, so a body built by
+   `exec` (the way the JAX validator loads its output) raises "could not
+   get source code". The GT4Py validator writes the emitted module to a
+   file and imports it.
+2. **Validation is a frontend type-check, not execution.** Forcing an
+   operator's `.foast_stage` runs gt4py's own type checker — it verifies
+   the body against the annotated signature and raises `DSLError` on a
+   mismatch (a scalar returned where a field is declared, an illegal
+   construct) — with no offset providers and no backend compile. That is
+   what `domain_validate` does, and it is stronger than the JAX tracing
+   check.
+
+One nuance still open, and it is an *execution* detail, not a
+correctness one: running a Cartesian-offset operator on the embedded
+backend needs a `gtx.CartesianConnectivity` offset provider whose exact
+form varies by version. Validation type-checks rather than executes, so it
+does not depend on this; a driver that runs the operator does, and pins it
+per backend.
 
 ## 12. Where this plugs into the pipeline
 

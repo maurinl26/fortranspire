@@ -49,6 +49,7 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "profile":    ("fortranspire.agent.cli",      "_profile_main"),
     "mcp":        ("fortranspire.server",         "main"),
     "github-app": ("fortranspire.github_app.app",  "main"),
+    "gt4py":      ("fortranspire.agent.cli",       "_gt4py_main"),
 }
 
 _HELP = """\
@@ -71,6 +72,7 @@ Commands:
   gpu         Phase 1: Fortran → GPU (OpenACC) + Cython wrapper
   port-batch  Parallel Phase 1 port across many files
   translate   Phase 2: Fortran → JAX (experimental)
+  gt4py       Fortran → gt4py.next field operators (experimental)
   profile     Performance benchmarking
   mcp         Run the MCP server (default HTTP/SSE; --stdio for vibe / Claude Desktop)
   github-app  Run the GitHub App webhook receiver (/fortranspire commands)
