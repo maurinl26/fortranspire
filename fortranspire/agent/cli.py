@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 
 # `translation_graph` and `translation_graph_phase1` pull in the LangChain
@@ -78,6 +79,14 @@ def translate_file(filepath: str, *, smoothing: str = "none",
     if smoothing == "smooth":
         print("   Relaxations change the forward values — this is a modelling choice.")
     code = _read_file(filepath)
+    # The parser reads module directories from FORTRANSPIRE_MODULE_PATH, which is
+    # process-global and so reaches every graph node reliably (a LangGraph state
+    # channel does not always survive the shared Phase-1 init node). Prepend the
+    # CLI dirs; also pass them in state for callers that invoke the graph directly.
+    if module_path:
+        existing = os.environ.get("FORTRANSPIRE_MODULE_PATH", "")
+        os.environ["FORTRANSPIRE_MODULE_PATH"] = os.pathsep.join(
+            [*module_path, *([existing] if existing else [])])
     initial_state = {
         "fortran_filepath": filepath,
         "fortran_code": code,
