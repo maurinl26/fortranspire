@@ -381,6 +381,29 @@ def gradcheck_agent(state: Phase2State) -> dict:
             updated.append(kernel)
             continue
 
+        # Static pre-check: a Python `if` on a value read from an array fails
+        # under jit with a cryptic TracerBoolConversionError. Catch it here and
+        # point at the exact line — deterministic, no execution needed.
+        from fortranspire.agent.nodes_jax.lint import data_dependent_branches
+        branches = data_dependent_branches(kernel.get("jax_code", ""))
+        if branches:
+            where = "; ".join(f"line {b['line']}: `if {b['snippet']}`" for b in branches[:4])
+            report = {"status": "fail", "failures": [{
+                "kind": "data-branch",
+                "detail": (
+                    f"Python branch on traced array data ({where}). A scalar read "
+                    "from an array is traced under jit — use `jnp.where` for a "
+                    "two-way choice or `jax.lax.switch` for a multi-way one."
+                ),
+            }]}
+            entry = {**kernel, "gradcheck": report, "status": "error"}
+            msg = f"{name}: data-branch — {where}"
+            failures.append(msg); logs.append(msg)
+            print(f"  ✗ {name:<28} FAIL — data-branch on traced array value")
+            print(f"      {where}")
+            updated.append(entry)
+            continue
+
         namespace: Dict[str, Any] = {}
         try:
             exec(kernel["jax_code"], namespace)  # noqa: S102 - our own generated code
