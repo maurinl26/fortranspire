@@ -61,15 +61,25 @@ def _split_by_intent(intent_map: dict[str, str]) -> tuple[list[str], list[str], 
 
 
 def _render_signature(name: str, inputs: List[str], outputs: List[str]) -> str:
-    """Render the Python signature the emitted kernel must match."""
+    """Render the Python signature the emitted kernel must match.
+
+    The return is documented in a trailing comment, **not** a `->`
+    annotation: the outputs are argument *names* (`avg`), and
+    ``def k(a) -> avg`` is invalid Python — `avg` is undefined at
+    definition time, so the emitted file raises ``NameError`` when imported
+    on its own. (It slipped past ``gradcheck`` only because that module's
+    ``from __future__ import annotations`` leaks into its ``exec``.) A
+    comment carries the same information to the emitter while keeping the
+    line importable.
+    """
     args = ", ".join(inputs) if inputs else ""
     if not outputs:
         returns = "None"
     elif len(outputs) == 1:
         returns = outputs[0]
     else:
-        returns = f"tuple[{', '.join(outputs)}]"
-    return f"def {name}({args}) -> {returns}"
+        returns = f"({', '.join(outputs)})"
+    return f"def {name}({args}):  # returns: {returns}"
 
 
 def _verdict(kernel: dict, outputs: List[str]) -> tuple[Purity, str]:
