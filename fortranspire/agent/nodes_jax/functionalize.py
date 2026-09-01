@@ -60,6 +60,46 @@ def _split_by_intent(intent_map: dict[str, str]) -> tuple[list[str], list[str], 
     return inputs, outputs, carried
 
 
+def _promote_free_state(
+    kernel: dict,
+    inputs: List[str],
+    outputs: List[str],
+    carried: List[str],
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Promote module state to explicit arguments (issue #5).
+
+    The parser's free-variable analysis lists the module-provided symbols a
+    routine reads (``free_reads``) or writes (``free_writes``) — state a pure
+    function cannot see. Read state becomes an extra **input**; written state
+    is read-and-written, so it is threaded as **INOUT** (input *and* output).
+    Order: the declared arguments first, promoted state appended, so the
+    original call signature is preserved as a prefix.
+    """
+    reads = list(kernel.get("free_reads") or [])
+    writes = list(kernel.get("free_writes") or [])
+    promoted: list[str] = []
+
+    in_lower = {x.lower() for x in inputs}
+    out_lower = {x.lower() for x in outputs}
+
+    for r in reads:
+        if r.lower() not in in_lower:
+            inputs.append(r)
+            in_lower.add(r.lower())
+            promoted.append(r)
+    for w in writes:
+        if w.lower() not in in_lower:
+            inputs.append(w)
+            in_lower.add(w.lower())
+        if w.lower() not in out_lower:
+            outputs.append(w)
+            out_lower.add(w.lower())
+            carried.append(w)
+        promoted.append(w)
+
+    return inputs, outputs, carried, promoted
+
+
 def _render_signature(name: str, inputs: List[str], outputs: List[str]) -> str:
     """Render the Python signature the emitted kernel must match.
 
@@ -160,9 +200,25 @@ def functionalize_agent(state: Phase2State) -> dict:
         intent_map = kernel.get("intent_map") or {}
 
         inputs, outputs, carried = _split_by_intent(intent_map)
+        # Promote module state (USE globals) to explicit arguments before the
+        # verdict: a routine that "writes global state" is only blocked if that
+        # state cannot be made visible — promotion is exactly making it visible.
+        inputs, outputs, carried, promoted = _promote_free_state(
+            kernel, inputs, outputs, carried)
         purity, reason = _verdict(kernel, outputs)
         needs_scan = bool(kernel.get("has_loop_carried_dep"))
         signature = _render_signature(name, inputs, outputs)
+
+        hints = _hints(kernel, carried, needs_scan)
+        if promoted:
+            hints.insert(0,
+                f"Promoted from module state (USE globals): {', '.join(promoted)}. "
+                "In the Fortran these are read/written as module globals; a pure "
+                "function cannot see them, so they are explicit arguments now. "
+                "Reference them by these names — never read a global or an "
+                "undefined symbol. Integer topology (index/count arrays) stays "
+                "integer; do not differentiate through it."
+            )
 
         entry: JaxKernelInfo = {
             **kernel,  # carry the parser's fields through
@@ -173,7 +229,7 @@ def functionalize_agent(state: Phase2State) -> dict:
             "purity": purity,
             "purity_reason": reason,
             "needs_scan": needs_scan,
-            "hints": _hints(kernel, carried, needs_scan),
+            "hints": hints,
             "jax_code": kernel.get("jax_code", ""),
             "gradcheck": kernel.get("gradcheck", {}),
             "status": kernel.get("status", "pending"),
