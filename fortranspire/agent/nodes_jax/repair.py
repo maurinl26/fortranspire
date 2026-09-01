@@ -17,7 +17,11 @@ from __future__ import annotations
 import ast
 from typing import Callable, List, Tuple
 
-from fortranspire.agent.nodes_jax.lint import data_dependent_branches
+from fortranspire.agent.nodes_jax.lint import (
+    data_dependent_branches,
+    data_dependent_loops,
+    disallowed_imports,
+)
 
 
 def emission_defects(code: str) -> List[str]:
@@ -29,12 +33,26 @@ def emission_defects(code: str) -> List[str]:
         # Unparseable code can't be linted further — report just this.
         return [f"Python syntax error at line {exc.lineno}: {exc.msg}"]
 
+    for imp in disallowed_imports(code):
+        defects.append(
+            f"line {imp['line']}: `import {imp['module']}` — this module does not "
+            "exist in Python (it is a Fortran `USE`). Its symbols are already "
+            "arguments of the function; remove the import and reference them "
+            "directly. Import only jax / jax.numpy / fortranspire.jax_smooth."
+        )
     for b in data_dependent_branches(code):
         defects.append(
             f"line {b['line']}: `if {b['snippet']}` branches on a value read from "
             "an array, which raises TracerBoolConversionError under `jit`. Rewrite "
             "it with `jnp.where` (two-way) or `jax.lax.switch` (multi-way) — never "
             "a Python `if` on array data."
+        )
+    for lp in data_dependent_loops(code):
+        defects.append(
+            f"line {lp['line']}: `for ... in {lp['snippet']}` loops over an "
+            "array-derived bound, which is not a concrete trip count under `jit`. "
+            "Vectorise over a fixed extent and mask the inactive entries with "
+            "`jnp.where`, or use `jax.lax.fori_loop` with a static bound."
         )
     return defects
 

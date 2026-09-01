@@ -59,22 +59,7 @@ def data_dependent_branches(code: str) -> List[Dict]:
     hits: List[Dict] = []
     seen: set[tuple] = set()
     for func in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
-        # Taint = names that carry array data. Seed from array-subscript reads,
-        # then propagate through assignments to a fixed point.
-        tainted: set[str] = set()
-        changed = True
-        while changed:
-            changed = False
-            for node in ast.walk(func):
-                if isinstance(node, ast.Assign):
-                    rhs = node.value
-                    if _contains_data_subscript(rhs) or (_names(rhs) & tainted):
-                        for tgt in node.targets:
-                            for name in _target_names(tgt):
-                                if name not in tainted:
-                                    tainted.add(name)
-                                    changed = True
-
+        tainted = _tainted_names(func)
         for node in ast.walk(func):
             if isinstance(node, ast.If):
                 hit = _names(node.test) & tainted
@@ -86,4 +71,83 @@ def data_dependent_branches(code: str) -> List[Dict]:
                         snippet = ""
                     hits.append({"line": node.lineno, "names": sorted(hit),
                                  "snippet": snippet})
+    return hits
+
+
+def _tainted_names(func: ast.FunctionDef) -> set[str]:
+    """Names in ``func`` that carry array data (seed: array subscripts; then
+    propagate through assignments to a fixed point)."""
+    tainted: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for node in ast.walk(func):
+            if isinstance(node, ast.Assign):
+                rhs = node.value
+                if _contains_data_subscript(rhs) or (_names(rhs) & tainted):
+                    for tgt in node.targets:
+                        for name in _target_names(tgt):
+                            if name not in tainted:
+                                tainted.add(name)
+                                changed = True
+    return tainted
+
+
+# Modules the emitted kernel may import. A Fortran `USE` copied as a Python
+# import (`from RXNS_FUNCTION import ...`) is a defect — the module does not
+# exist and the file raises ModuleNotFoundError at load.
+_ALLOWED_IMPORTS = {
+    "jax", "jax.numpy", "jax.lax", "jax.scipy", "numpy", "math", "functools",
+    "typing", "fortranspire.jax_smooth", "__future__",
+}
+
+
+def disallowed_imports(code: str) -> List[Dict]:
+    """Imports of modules the emitted kernel must not pull in."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    hits: List[Dict] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] not in {m.split(".")[0] for m in _ALLOWED_IMPORTS}:
+                    hits.append({"line": node.lineno, "module": alias.name})
+        elif isinstance(node, ast.ImportFrom):
+            mod = node.module or ""
+            if mod and mod not in _ALLOWED_IMPORTS and mod.split(".")[0] not in {
+                m.split(".")[0] for m in _ALLOWED_IMPORTS}:
+                hits.append({"line": node.lineno, "module": mod})
+    return hits
+
+
+def data_dependent_loops(code: str) -> List[Dict]:
+    """Python `for x in range(<array-derived value>)` — a data-dependent loop
+    bound, which cannot be a concrete trip count under `jit`."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+    hits: List[Dict] = []
+    seen: set[tuple] = set()
+    for func in [n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef)]:
+        tainted = _tainted_names(func)
+        for node in ast.walk(func):
+            if isinstance(node, ast.For):
+                it = node.iter
+                # `range(...)` whose argument is array-derived (tainted or a
+                # direct array subscript like `range(NUSERAT[NCSP])`).
+                if (isinstance(it, ast.Call) and isinstance(it.func, ast.Name)
+                        and it.func.id == "range"):
+                    if any(_contains_data_subscript(a) or (_names(a) & tainted)
+                           for a in it.args):
+                        try:
+                            snippet = ast.unparse(it)
+                        except Exception:  # noqa: BLE001
+                            snippet = "range(...)"
+                        key = (node.lineno, snippet)
+                        if key not in seen:
+                            seen.add(key)
+                            hits.append({"line": node.lineno, "snippet": snippet})
     return hits

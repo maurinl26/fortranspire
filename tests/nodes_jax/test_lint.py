@@ -1,5 +1,37 @@
 """Static lint: a Python branch on array-derived (traced) data."""
-from fortranspire.agent.nodes_jax.lint import data_dependent_branches
+from fortranspire.agent.nodes_jax.lint import (
+    data_dependent_branches,
+    data_dependent_loops,
+    disallowed_imports,
+)
+
+
+def test_disallowed_import_of_a_fortran_module():
+    code = "from RXNS_FUNCTION import SPECIAL_RATES\nimport jax.numpy as jnp\ndef k(x):\n    return x\n"
+    hits = disallowed_imports(code)
+    assert len(hits) == 1 and hits[0]["module"] == "RXNS_FUNCTION"
+
+
+def test_allowed_imports_are_not_flagged():
+    code = ("from __future__ import annotations\nimport jax.numpy as jnp\n"
+            "from jax import lax\nfrom fortranspire.jax_smooth import smooth_max\n"
+            "def k(x):\n    return x\n")
+    assert disallowed_imports(code) == []
+
+
+def test_data_dependent_range_loop_is_flagged():
+    code = ("def k(nuserat, ncsp, x):\n"
+            "    for i in range(nuserat[ncsp]):\n"
+            "        x = x + i\n"
+            "    return x\n")
+    hits = data_dependent_loops(code)
+    assert len(hits) == 1
+    assert "range(nuserat[ncsp])" in hits[0]["snippet"]
+
+
+def test_static_range_loop_is_not_flagged():
+    code = "def k(n, x):\n    for i in range(4):\n        x = x + i\n    return x\n"
+    assert data_dependent_loops(code) == []
 
 
 def test_flags_if_on_scalar_read_from_array():
