@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — spectral truncation as an alias, not a geometry (issue #88)
+
+- `TCo1279`, `TL1279` and similar spectral-truncation labels now resolve to
+  their Gaussian grid — TCo (cubic octahedral) → `O<T+1>` (verified against
+  ECMWF: TCo1279 = O1280), TL (linear) → `O<(T+1)/2>` (TL1279 ≈ N640). They
+  are **aliases**, not a catalogue family: the truncation shows the spectral
+  resolution, but the grid it maps to is what imposes the decomposition.
+  `fortranspire domain TCo1279 --ranks 1024` works and notes the resolution.
+
+
 ### Added — interactive domain agent over MCP (issue #88)
 
 - Two deterministic MCP tools expose the domain agent so an LLM agent

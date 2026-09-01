@@ -56,6 +56,20 @@ model](gt4py-next-patterns.md) computes it from the stencil offsets
 and the per-rank memory from it. The vertical axis stays structured; the
 mesh is horizontal-only.
 
+## Spectral truncation is an alias, not a geometry
+
+`TCo1279`, `TL1279` are **spectral truncation** labels — they show the
+spectral resolution, and they resolve to a Gaussian grid, which is what
+imposes the decomposition. So the agent treats them as aliases, not as a
+catalogue family:
+
+- `TCo<T>` (cubic octahedral) → `O<T+1>` — verified against ECMWF
+  (`TCo1279` = `O1280`);
+- `TL<T>` (linear) → `O<(T+1)/2>` — the linear grid ≈ reduced Gaussian
+  `N<(T+1)/2>` (`TL1279` ≈ `N640`).
+
+`fortranspire domain TCo1279 --ranks 1024` works and notes the resolution.
+
 ## The grid imposes the decomposition
 
 The dependency runs one way: **software-defined by the grid**. The rank

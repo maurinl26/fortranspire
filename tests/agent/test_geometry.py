@@ -158,3 +158,42 @@ class TestGridImposesDecomposition:
         """The memory/points come from the grid-allowed ranks, not the wish."""
         d = propose_decomposition("C768", n_ranks=1000, halo=1)
         assert d.points_per_rank == pytest.approx(3_538_944 / 1014, rel=0.01)
+
+
+class TestSpectralAliases:
+    """TCo / TL are spectral truncation labels, not geometries — they resolve
+    to the Gaussian grid, which is what imposes the decomposition (#88)."""
+
+    def test_cubic_octahedral_alias(self):
+        from fortranspire.agent.geometry import resolve_spectral
+
+        grid, note = resolve_spectral("TCo1279")
+        assert grid == "O1280"           # verified against ECMWF: N = T+1
+        assert "cubic" in note
+
+    def test_linear_alias(self):
+        from fortranspire.agent.geometry import resolve_spectral
+
+        grid, _ = resolve_spectral("TL1279")
+        assert grid == "O640"            # N = (T+1)/2, the known N640
+
+    def test_identify_resolves_a_spectral_name_to_its_grid(self):
+        geom, param = identify("TCo1279")
+        assert geom.key == "octahedral"
+        assert geom.count(param) == 4 * 1280**2 + 36 * 1280
+
+    def test_a_grid_name_is_not_spectral(self):
+        from fortranspire.agent.geometry import resolve_spectral
+
+        assert resolve_spectral("O1280") is None
+        assert resolve_spectral("nside=1024") is None
+
+    def test_decomposition_from_a_spectral_name_notes_the_resolution(self):
+        d = propose_decomposition("TCo1279", n_ranks=1024, halo=1)
+        assert d.total_points == 6_599_680
+        assert any("TCo1279" in n and "octahedral" in n for n in d.notes)
+
+    def test_spectral_is_not_a_catalogue_family(self):
+        """It must stay an alias, not become a geometry entry."""
+        assert "spectral" not in GEOMETRIES
+        assert not any("spectral" in g.key for g in GEOMETRIES.values())
