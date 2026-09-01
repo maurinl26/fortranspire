@@ -36,6 +36,23 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional
 
 
+@dataclass
+class Partition:
+    """A grid-imposed decomposition: the grid decides, the software follows.
+
+    The requested rank count is a wish; `ranks` is what the grid actually
+    allows (a cubed sphere has 6 faces, so ranks are 6·nx·ny; HEALPix nested
+    imposes the 12·4^d hierarchy). `exact` says whether the wish was already
+    grid-compatible.
+    """
+
+    requested: int
+    ranks: int
+    exact: bool
+    shape: str
+    note: str = ""
+
+
 @dataclass(frozen=True)
 class Geometry:
     """One grid family: how it is named, sized, meshed and decomposed."""
@@ -49,6 +66,10 @@ class Geometry:
     structure: str                    # "unstructured" | "structured" | "block-structured"
     mesh_library: str                 # who provides the mesh
     partitioning: str                 # native domain-decomposition strategy
+    # The grid imposes the decomposition: requested ranks -> what the grid
+    # actually allows. This is the dependency direction — software-defined
+    # by the grid, not a free knob.
+    decompose: "Callable[[int], Partition]" = None  # set below
     notes: str = ""
 
 
@@ -85,6 +106,61 @@ def _parse_latlon(name: str) -> Optional[float]:
     return None
 
 
+# ── Grid-imposed decomposition rules ───────────────────────────────────────
+# Each returns the decomposition the *grid* allows for a requested rank
+# count — the software is defined by the grid, so the rank count is snapped
+# to what the topology permits, not accepted blindly.
+
+def _nearest_square(n: int) -> tuple[int, int]:
+    """Factor n into the most square-ish (a, b) with a*b closest to n, a<=b."""
+    best = (1, n)
+    for a in range(1, int(math.isqrt(n)) + 1):
+        b = round(n / a)
+        if abs(a * b - n) <= abs(best[0] * best[1] - n):
+            best = (a, b)
+    return best
+
+
+def _decompose_cubed_sphere(requested: int) -> Partition:
+    # 6 faces, each tiled p×p (the natural FV3 layout is square per face),
+    # so ranks are 6·p². Snap to the nearest such count.
+    p = max(1, round(math.sqrt(max(requested, 6) / 6)))
+    ranks = 6 * p * p
+    return Partition(requested, ranks, ranks == requested,
+                     f"6 faces × {p}×{p} tiles",
+                     "cubed sphere: ranks must be 6·p² (square tiles per face)")
+
+
+def _decompose_healpix(requested: int) -> Partition:
+    # Nested: the sphere splits into 12·4^d equal regions that keep
+    # neighbours local. Snap to the nearest such count.
+    best_d, best = 0, 12
+    d = 0
+    while 12 * (4 ** d) <= max(requested, 12) * 4:
+        if abs(12 * 4 ** d - requested) < abs(best - requested):
+            best, best_d = 12 * 4 ** d, d
+        d += 1
+    return Partition(requested, best, best == requested,
+                     f"nested: 12·4^{best_d} = {best} regions",
+                     "HEALPix nested imposes 12·4^d — keeps neighbours local")
+
+
+def _decompose_latlon(requested: int) -> Partition:
+    nx, ny = _nearest_square(requested)
+    ranks = nx * ny
+    return Partition(requested, ranks, ranks == requested,
+                     f"{nx}×{ny} blocks",
+                     "lat-lon: a 2-D block factorisation of the rank count")
+
+
+def _decompose_flexible(strategy: str):
+    """Atlas equal-regions and METIS take (almost) any rank count."""
+    def decompose(requested: int) -> Partition:
+        return Partition(requested, requested, True, strategy,
+                         "flexible partitioner — the grid allows this count")
+    return decompose
+
+
 # ── The catalogue ──────────────────────────────────────────────────────────
 
 GEOMETRIES: dict[str, Geometry] = {
@@ -98,6 +174,7 @@ GEOMETRIES: dict[str, Geometry] = {
         structure="unstructured",
         mesh_library="ECMWF Atlas",
         partitioning="equal-regions (Atlas), one-element halo",
+        decompose=_decompose_flexible("equal-regions (Atlas)"),
         notes="ECMWF IFS / FVM native grid; co-located with the spectral grid.",
     ),
     "gaussian_regular": Geometry(
@@ -110,6 +187,7 @@ GEOMETRIES: dict[str, Geometry] = {
         structure="structured",
         mesh_library="ECMWF Atlas",
         partitioning="latitude bands, or 2-D checkerboard",
+        decompose=_decompose_latlon,
     ),
     "healpix": Geometry(
         key="healpix",
@@ -121,6 +199,7 @@ GEOMETRIES: dict[str, Geometry] = {
         structure="unstructured",
         mesh_library="healpy / Atlas",
         partitioning="ring or nested; nested gives a quad-tree partition",
+        decompose=_decompose_healpix,
         notes="Equal-area, iso-latitude; ECMWF/nextGEMS output grid of choice.",
     ),
     "cubed_sphere": Geometry(
@@ -133,6 +212,7 @@ GEOMETRIES: dict[str, Geometry] = {
         structure="block-structured",
         mesh_library="FV3 / GFDL",
         partitioning="6 faces × (i,j) tiles; ranks per face",
+        decompose=_decompose_cubed_sphere,
         notes="GFDL FV3, SHiELD, Pace. Structured within each face.",
     ),
     "icosahedral": Geometry(
@@ -145,6 +225,7 @@ GEOMETRIES: dict[str, Geometry] = {
         structure="unstructured",
         mesh_library="ICON grid generator",
         partitioning="graph partition (METIS) or hierarchical; halo of 1–2 rows",
+        decompose=_decompose_flexible("graph partition (METIS)"),
         notes="DWD/MPI ICON. Cell/Edge/Vertex connectivity.",
     ),
     "latlon": Geometry(
@@ -157,6 +238,7 @@ GEOMETRIES: dict[str, Geometry] = {
         structure="structured",
         mesh_library="—",
         partitioning="2-D block decomposition",
+        decompose=_decompose_latlon,
     ),
 }
 
@@ -191,16 +273,24 @@ class Decomposition:
     partitioning: str
     halo_exchange: str
     bytes_per_rank: int
+    requested_ranks: int = 0          # what the user asked for
+    ranks_exact: bool = True          # was it grid-compatible?
+    partition_shape: str = ""         # the grid-imposed tiling
     notes: list[str] = field(default_factory=list)
 
     def render(self) -> str:
         gib = self.bytes_per_rank / (1024 ** 3)
+        rank_line = f"  MPI ranks             {self.n_ranks}"
+        if not self.ranks_exact:
+            rank_line += (f"   (requested {self.requested_ranks} — snapped to what "
+                          f"the grid allows)")
         lines = [
             f"# Decomposition — {self.geometry} {self.resolution}",
             "",
             f"  horizontal points     {self.total_points:,}",
             f"  vertical levels       {self.levels}",
-            f"  MPI ranks             {self.n_ranks}",
+            rank_line,
+            f"  partition             {self.partition_shape}",
             f"  points / rank         ~{self.points_per_rank:,}",
             f"  stencil halo          {self.halo} row(s)",
             f"  fields (3-D)          {self.fields}",
@@ -243,7 +333,15 @@ def propose_decomposition(
     geom, param = hit
 
     total = geom.count(param)
-    per_rank = math.ceil(total / max(n_ranks, 1))
+
+    # The grid imposes the decomposition: snap the requested rank count to
+    # what the topology allows (a cubed sphere has 6 faces; HEALPix nested
+    # imposes 12·4^d). This is the dependency direction — software-defined
+    # by the grid, not a free choice.
+    partition = geom.decompose(n_ranks) if geom.decompose else \
+        Partition(n_ranks, n_ranks, True, geom.partitioning)
+    effective_ranks = partition.ranks
+    per_rank = math.ceil(total / max(effective_ranks, 1))
 
     # Memory: an interior tile plus its halo. For an unstructured/quasi-2-D
     # partition the halo scales with the perimeter ~ sqrt(per_rank); a
@@ -261,11 +359,14 @@ def propose_decomposition(
     if geom.key == "healpix" and halo:
         notes.append("nested ordering keeps neighbours local — good for the halo")
 
+    if not partition.exact:
+        notes.append(partition.note)
+
     return Decomposition(
         geometry=geom.name,
         resolution=resolution,
         total_points=total,
-        n_ranks=n_ranks,
+        n_ranks=effective_ranks,
         points_per_rank=per_rank,
         halo=halo,
         levels=levels,
@@ -273,6 +374,9 @@ def propose_decomposition(
         partitioning=geom.partitioning,
         halo_exchange=_halo_exchange(geom, halo),
         bytes_per_rank=bytes_per_rank,
+        requested_ranks=n_ranks,
+        ranks_exact=partition.exact,
+        partition_shape=partition.shape,
         notes=notes,
     )
 

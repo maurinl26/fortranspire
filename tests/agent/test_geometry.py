@@ -115,3 +115,46 @@ class TestCliWiring:
         halo = build_domain_model(src).max_halo
         d = propose_decomposition("O1280", n_ranks=1024, halo=halo)
         assert d.halo == 1
+
+
+class TestGridImposesDecomposition:
+    """The dependency direction: software-defined by the grid. The rank count
+    is snapped to what the grid topology allows, not accepted blindly."""
+
+    def test_cubed_sphere_forces_six_faces_of_square_tiles(self):
+        d = propose_decomposition("C768", n_ranks=1000, halo=1)
+        assert d.n_ranks == 6 * 13 * 13   # 1014, the nearest 6·p²
+        assert d.requested_ranks == 1000
+        assert d.ranks_exact is False
+        assert "6 faces × 13×13" in d.partition_shape
+
+    def test_cubed_sphere_accepts_a_compatible_count(self):
+        d = propose_decomposition("C768", n_ranks=216, halo=1)
+        assert d.n_ranks == 216 and d.ranks_exact is True   # 6×6×6
+
+    def test_healpix_forces_the_nested_hierarchy(self):
+        d = propose_decomposition("nside=1024", n_ranks=500, halo=1)
+        assert d.n_ranks == 768         # 12·4^3, nearest to 500
+        assert d.ranks_exact is False
+        assert "12·4" in d.partition_shape
+
+    def test_healpix_accepts_a_nested_count(self):
+        d = propose_decomposition("nside=1024", n_ranks=192, halo=1)
+        assert d.n_ranks == 192 and d.ranks_exact is True   # 12·4^2
+
+    def test_octahedral_is_flexible_via_equal_regions(self):
+        """Atlas equal-regions takes the requested count — but it is still
+        the grid's partitioner that allows it, not a free division."""
+        d = propose_decomposition("O1280", n_ranks=1000, halo=1)
+        assert d.n_ranks == 1000 and d.ranks_exact is True
+
+    def test_snapping_is_surfaced_in_the_report(self):
+        d = propose_decomposition("C768", n_ranks=1000, halo=1)
+        text = d.render()
+        assert "requested 1000" in text
+        assert "snapped to what the grid allows" in text
+
+    def test_points_per_rank_uses_the_grid_imposed_count(self):
+        """The memory/points come from the grid-allowed ranks, not the wish."""
+        d = propose_decomposition("C768", n_ranks=1000, halo=1)
+        assert d.points_per_rank == pytest.approx(3_538_944 / 1014, rel=0.01)
