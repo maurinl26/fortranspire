@@ -49,6 +49,7 @@ from fortranspire.agent.nodes_jax import (
     gradcheck_agent,
     jax_kernel_agent,
 )
+from fortranspire.agent.nodes_jax.equivalence import equivalence_agent
 from fortranspire.agent.nodes_jax._state import Phase2State
 
 workflow_phase2 = StateGraph(Phase2State)
@@ -60,6 +61,7 @@ workflow_phase2.add_node("functionalize",  functionalize_agent)
 workflow_phase2.add_node("domain_model",   domain_model_agent)
 workflow_phase2.add_node("jax_kernel",     jax_kernel_agent)
 workflow_phase2.add_node("gradcheck",      gradcheck_agent)
+workflow_phase2.add_node("equivalence",    equivalence_agent)
 
 workflow_phase2.set_entry_point("init")
 workflow_phase2.add_edge("init",          "parser")
@@ -68,6 +70,10 @@ workflow_phase2.add_edge("extractor",     "functionalize")
 workflow_phase2.add_edge("functionalize", "domain_model")
 workflow_phase2.add_edge("domain_model",  "jax_kernel")
 workflow_phase2.add_edge("jax_kernel",    "gradcheck")
-workflow_phase2.add_edge("gradcheck",     END)
+# gradcheck proves differentiability; equivalence proves it computes what the
+# Fortran does. Both blocking when they run; equivalence degrades to a skip
+# without gfortran/meson, or for a routine that reads module state.
+workflow_phase2.add_edge("gradcheck",     "equivalence")
+workflow_phase2.add_edge("equivalence",   END)
 
 translation_app_phase2 = workflow_phase2.compile()

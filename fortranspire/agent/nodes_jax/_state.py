@@ -79,6 +79,7 @@ class Phase2State(TypedDict):
     functionalized: bool
     jax_module: str                   # consolidated importable module
     gradcheck_passed: bool
+    equivalence_passed: bool          # JAX output matches the original Fortran
     gradcheck_log: str
 
     executed_agents: List[str]

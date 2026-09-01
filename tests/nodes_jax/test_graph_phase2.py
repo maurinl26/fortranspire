@@ -47,7 +47,8 @@ def test_pipeline_order(graph):
         ("functionalize", "domain_model"),   # typed model before emission
         ("domain_model", "jax_kernel"),
         ("jax_kernel", "gradcheck"),
-        ("gradcheck", "__end__"),
+        ("gradcheck", "equivalence"),        # numerical equivalence vs Fortran
+        ("equivalence", "__end__"),
     }
     assert edges == expected
 
@@ -62,10 +63,11 @@ def test_functionalize_precedes_emission(graph):
     assert names.index("functionalize") < names.index("jax_kernel")
 
 
-def test_gradcheck_is_last(graph):
-    """Nothing runs after the gradient verdict — it is the gate."""
+def test_equivalence_is_last(graph):
+    """Correctness (JAX vs Fortran) is the final gate, after differentiability."""
     names = node_names(graph)
-    assert names[-1] == "gradcheck"
+    assert names[-1] == "equivalence"
+    assert names.index("gradcheck") < names.index("equivalence")
 
 
 def test_no_openacc_node(graph):

@@ -105,6 +105,21 @@ def translate_file(filepath: str, *, smoothing: str = "none",
         print(final_state.get("gradcheck_log", ""))
         return 1
 
+    # Numerical equivalence against the original Fortran — the correctness gate.
+    # A mismatch means the kernel is differentiable but computes the wrong thing.
+    if not final_state.get("equivalence_passed", True):
+        print("\n❌ Numerical equivalence failed — the JAX does not match the "
+              "original Fortran.")
+        for k in final_state.get("kernel_results", []):
+            eq = k.get("equivalence") or {}
+            if eq.get("status") == "fail":
+                print(f"   - {k['routine_name']}: max|Δ| = "
+                      f"{eq.get('max_abs_err', '?')}, {eq.get('mismatches')}")
+        return 1
+
+    checked = [k for k in final_state.get("kernel_results", [])
+               if (k.get("equivalence") or {}).get("status") == "pass"]
+
     unverified = final_state.get("gradcheck_unverified", [])
     if unverified:
         print(f"\n⚠️  Translation complete — {len(unverified)} kernel(s) emitted but "
@@ -113,7 +128,12 @@ def translate_file(filepath: str, *, smoothing: str = "none",
             print(f"   - {msg}")
         return 0
 
-    print("\n✅ Translation complete, gradients verified.")
+    if checked:
+        print(f"\n✅ Translation complete — gradients verified and {len(checked)} "
+              "kernel(s) match the original Fortran numerically.")
+    else:
+        print("\n✅ Translation complete, gradients verified. "
+              "(Numerical equivalence skipped — no gfortran/meson, or module state.)")
     return 0
 
 
