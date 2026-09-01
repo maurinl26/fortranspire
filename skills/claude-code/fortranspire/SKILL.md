@@ -30,6 +30,8 @@ the following ways:
 | **Port many files** in parallel                          | `port-batch`        |
 | Fortran → JAX (experimental, differentiable)             | `translate`         |
 | Performance benchmarking against the original kernel     | `profile`           |
+| Fortran → gt4py.next field operators                     | `gt4py`             |
+| Domain geometry + MPI decomposition (interactive)        | `domain`            |
 | Start the MCP HTTP/SSE server                            | `mcp`               |
 
 ## Prerequisites — check before invoking
@@ -192,3 +194,27 @@ When the user mentions a Fortran file:
 - PyPI: https://pypi.org/project/fortranspire/
 - Documentation: https://fortranspire.readthedocs.io
 - Issue tracker: https://github.com/maurinl26/fortranspire/issues
+
+
+## Interactive: domain geometry & decomposition
+
+The `domain` verb — and the MCP tools `domain_geometries` /
+`domain_decomposition` — are **interactive**, because the geometry cannot be
+read from the Fortran (a kernel `t(k+1)-t(k-1)` has a halo of 1 whatever the
+mesh; whether that mesh is octahedral or HEALPix is the modeller's choice).
+
+When the user asks about domain decomposition, halos, or MPI layout for a
+kernel, run this flow:
+
+1. Read the kernel's **stencil halo** — pass the source to
+   `domain_decomposition`; it reports the halo from the typed model.
+2. **Ask the user** which geometry and resolution (present the catalogue
+   from `domain_geometries` — O1280, nside=1024, C768, R2B9, …) and how many
+   MPI ranks. Do not guess these.
+3. Call `domain_decomposition(resolution, n_ranks, source)` for the proposal.
+
+The tools nudge you: with no geometry they return the catalogue and ask;
+with a geometry but no ranks they read the halo and ask for the ranks. The
+grid imposes the decomposition — a requested rank count is snapped to what
+the topology allows (a cubed sphere to 6·p², HEALPix nested to 12·4^d), and
+the report says when it snapped.

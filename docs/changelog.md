@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — interactive domain agent over MCP (issue #88)
+
+- Two deterministic MCP tools expose the domain agent so an LLM agent
+  (Claude Code, mistral-vibe, Le Chat) can drive it conversationally:
+  `domain_geometries` (the catalogue to present) and `domain_decomposition`
+  (the proposal + the interactive nudge). Geometry cannot be read from a
+  kernel — it is a modelling choice — so the tools surface what is missing at
+  each step: with no geometry they return the catalogue and ask; with a
+  geometry but no ranks they read the stencil halo and ask for the ranks;
+  with everything they propose the grid-imposed decomposition. No LLM, no
+  token — safe on the public surface. The Claude Code skill gains the
+  interactive-flow instruction.
+
+
 ### Changed — the grid imposes the decomposition (issue #88)
 
 - The decomposition proposer no longer divides points by an arbitrary rank

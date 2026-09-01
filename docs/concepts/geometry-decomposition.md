@@ -74,6 +74,27 @@ exist, and a requested count is snapped to the nearest one the grid allows.
 The per-rank points and memory are computed from the grid-allowed count, not
 the wish — so the estimate matches what would actually run.
 
+## Interactive from an agent (MCP)
+
+The domain agent is exposed as two deterministic MCP tools, so an LLM agent
+(Claude Code, mistral-vibe, Le Chat) can drive the conversation:
+
+- `domain_geometries` — the catalogue, for the agent to present.
+- `domain_decomposition(resolution, n_ranks, source, …)` — the proposal, and
+  the **nudge**: with no geometry it returns the catalogue and asks the user
+  to choose; with a geometry but no ranks it reads the stencil halo and asks
+  for the ranks; with everything it proposes.
+
+The flow the agent runs:
+
+1. read the kernel's halo (pass `source`);
+2. **ask the user** which geometry + resolution and how many ranks — these
+   are not in the Fortran;
+3. propose.
+
+Both tools are deterministic — no LLM, no token — so they are safe on the
+public (Le Chat) surface too.
+
 ## Why interactive
 
 Geometry is not in the Fortran. A kernel `t(k+1) - t(k-1)` has a halo of 1
