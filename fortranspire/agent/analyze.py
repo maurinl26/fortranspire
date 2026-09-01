@@ -225,21 +225,29 @@ def _non_smooth_constructs(source: str) -> list[tuple[str, str, int | None]]:
     return found
 
 
-_SUBSCRIPT_RE = re.compile(r"\b[A-Za-z_]\w*\s*\(([^()]*)\)")
+_SUBSCRIPT_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\(([^()]*)\)")
 _SHIFT_RE = re.compile(r"[A-Za-z_]\w*\s*([+-]\s*\d+)")
 
 
-def _gt4py_halo(source: str) -> int:
+def _gt4py_halo(source: str, integer_arrays: frozenset[str] = frozenset()) -> int:
     """Largest constant index shift read — the stencil halo. Light scan.
 
     Finds ``a(k+2, j)``-style subscripts and returns the max ``|shift|``,
     which is the halo the GT4Py driver must leave as an interior boundary
     (issue #82). Comment tails are stripped first.
+
+    A shift inside an **integer array**'s subscript is index arithmetic into a
+    lookup table (``IRM2(NRK, NP+3, NCS)`` in a chemistry mechanism), not a
+    spatial field stencil, so such arrays are skipped — a real field is never
+    integer-typed. Without type information (``integer_arrays`` empty) the scan
+    is unchanged.
     """
     stripped = _COMMENT_RE.sub("", source)
     halo = 0
     for match in _SUBSCRIPT_RE.finditer(stripped):
-        for sub in match.group(1).split(","):
+        if match.group(1).lower() in integer_arrays:
+            continue
+        for sub in match.group(2).split(","):
             m = _SHIFT_RE.search(sub.strip())
             if m:
                 halo = max(halo, abs(int(m.group(1).replace(" ", ""))))
@@ -399,7 +407,11 @@ def analyze_file(path: str) -> FileReport:
         # GT4Py halo / domain (issue #82). A stencil shift means the driver
         # must restrict the domain to the interior — surfaced so a user
         # sees the halo before a port, from the same source scan.
-        halo = _gt4py_halo(kernel.get("fortran_code") or src)
+        integer_arrays = frozenset(
+            n.lower() for n, dt in (kernel.get("arg_dtypes") or {}).items()
+            if dt == "integer"
+        )
+        halo = _gt4py_halo(kernel.get("fortran_code") or src, integer_arrays)
         if halo > 0:
             report.findings.append(
                 _make_finding(
