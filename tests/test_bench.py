@@ -191,6 +191,38 @@ def test_cli_compare_passes_when_baseline_matches(
     assert rc == 0
 
 
+def test_timing_jitter_is_not_a_regression(tmp_path: Path):
+    """`gfortran_seconds` is measured but not gated (issue #72).
+
+    It clocks the compile of a tiny fixture — a few milliseconds — so
+    runner jitter routinely moves it past ±10 %. Gating it failed builds
+    for nothing, which was the flaky check on main. A large timing swing,
+    with every structural metric identical, must NOT be a regression.
+    """
+    from fortranspire.agent.bench import Metrics, compare
+
+    baseline = {
+        "n_files_generated": 3,
+        "n_routines_extracted": 2,
+        "n_acc_pragmas": 3,
+        "fortran_total_bytes": 170,
+        "gfortran_seconds": 0.0048,
+    }
+    current = Metrics(
+        output_root="x",
+        n_files_generated=3,
+        n_routines_extracted=2,
+        n_acc_pragmas=3,
+        fortran_total_bytes=170,
+        gfortran_seconds=0.0090,  # +87 %, pure jitter
+    )
+    report = compare(baseline, current, tolerance=0.10)
+    assert not report.has_regressions
+    # It is still reported, just never flagged.
+    timing = next(r for r in report.rows if r.metric == "gfortran_seconds")
+    assert timing.severity == "ok"
+
+
 def test_cli_compare_fails_on_regression(
     tmp_path: Path, capsys: pytest.CaptureFixture[str],
 ):
