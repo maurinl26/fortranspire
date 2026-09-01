@@ -104,7 +104,8 @@ class TestGraph:
             ("functionalize", "domain_model"),   # typed model before emission
             ("domain_model", "gt4py_kernel"),
             ("gt4py_kernel", "type_check"),
-            ("type_check", "__end__"),
+            ("type_check", "domain_check"),   # driver + static domain/halo (#82)
+            ("domain_check", "__end__"),
         }
 
     def test_functionalize_is_the_phase2_node_reused(self):

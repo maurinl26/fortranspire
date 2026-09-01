@@ -440,6 +440,42 @@ form varies by version. Validation type-checks rather than executes, so it
 does not depend on this; a driver that runs the operator does, and pins it
 per backend.
 
+## 11bis. The domain and halos live in the driver (issue #82)
+
+A field operator says *what* to compute at a point; the **domain** — the
+range each dimension is written over, the halo a shifted read needs, the
+offset providers — lives in the **driver**, and the frontend type check
+(§11) cannot see it. This is where the real bugs are: an operator that
+reads ``a(Koff[1])`` at the top layer reads out of bounds unless the domain
+is restricted to the interior.
+
+The pipeline generates the driver **deterministically from the typed domain
+model** (the offsets give the halo, the halo gives the interior domain) and
+validates it statically:
+
+```python
+# generated from  tnew(k) = ... t(k+1) ... t(k-1) ...  (offsets {-1,+1})
+Koff = gtx.FieldOffset("Koff", source=K, target=(K,))
+
+def run_diffuse(t, kdiff, tnew, *, n_K):
+    offset_provider = {"Koff": gtx.CartesianConnectivity(K)}
+    domain = {K: (1, n_K - 1)}     # interior: the boundary layers are read, not written
+    diffuse(t, kdiff, out=tnew, offset_provider=offset_provider, domain=domain)
+    return tnew
+```
+
+`FORT033` surfaces the halo in `analyze` / `explain` before a port. The
+static check catches a shift with no matching offset provider — the "reads
+out of bounds because the domain was not restricted" class — without
+running anything.
+
+**Executing** the driver is a separate matter: a Cartesian-offset operator
+does **not** run on the embedded backend (it wants a neighbour table), and
+the compiled ``gtfn`` backend needs a full C++ toolchain. So the pipeline
+generates and *statically* validates the driver; end-to-end execution is a
+follow-up gated on a gtfn toolchain. The static domain/halo reasoning —
+which is where the mistakes are — needs neither.
+
 ## 12. Where this plugs into the pipeline
 
 | Piece | Status | Reuse |

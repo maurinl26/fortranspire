@@ -122,8 +122,18 @@ def gt4py_file(filepath: str) -> int:
         print(final_state.get("type_check_log", ""))
         return 1
 
-    print("\n✅ Field operators emitted and type-checked against gt4py.next.")
-    print("   (type-check only — the domain/halos live in the driver, issue #82.)")
+    # Domain / halo: the driver was generated and statically checked (#82).
+    problems = final_state.get("domain_problems") or []
+    if problems:
+        print("\n❌ Domain/halo check failed:")
+        for prob in problems:
+            print(f"   - {prob}")
+        return 1
+
+    print("\n✅ Field operators type-checked; drivers generated with the "
+          "interior domain and offset providers.")
+    print("   Static domain/halo check passed (no execution — running a "
+          "Cartesian shift needs a gtfn toolchain, #82).")
     return 0
 
 

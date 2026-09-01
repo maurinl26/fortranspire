@@ -13,6 +13,11 @@ from fortranspire.agent.nodes_gt4py.type_check import (
     type_check_source,
 )
 from fortranspire.agent.nodes_gt4py.gt4py_kernel import gt4py_kernel_agent
+from fortranspire.agent.nodes_gt4py.driver import (
+    build_driver,
+    domain_check_agent,
+    validate_domain,
+)
 from fortranspire.agent.nodes_gt4py.portability import Gt4PyVerdict, score_routine
 
 __all__ = [

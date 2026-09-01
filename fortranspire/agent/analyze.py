@@ -69,6 +69,16 @@ RULES: dict[str, dict[str, str]] = {
         "summary": "COMMON block detected — incompatible with PURE/ELEMENTAL",
         "help": "Replace COMMON with a MODULE of explicit arguments; the LLM extractor handles this.",
     },
+    "FORT033": {
+        "name": "Gt4PyHalo",
+        "severity": "note",
+        "summary": "GT4Py halo/domain — stencil shift needs an interior domain",
+        "help": (
+            "A stencil that reads a(k±n) cannot write the n boundary layers. "
+            "The generated GT4Py driver restricts the domain to the interior; "
+            "see docs/concepts/gt4py-next-patterns.md and issue #82."
+        ),
+    },
     "FORT032": {
         "name": "Gt4PyPortability",
         "severity": "note",
@@ -213,6 +223,27 @@ def _non_smooth_constructs(source: str) -> list[tuple[str, str, int | None]]:
         found.append((entry.key, f"{entry.why} — {target}", line))
 
     return found
+
+
+_SUBSCRIPT_RE = re.compile(r"\b[A-Za-z_]\w*\s*\(([^()]*)\)")
+_SHIFT_RE = re.compile(r"[A-Za-z_]\w*\s*([+-]\s*\d+)")
+
+
+def _gt4py_halo(source: str) -> int:
+    """Largest constant index shift read — the stencil halo. Light scan.
+
+    Finds ``a(k+2, j)``-style subscripts and returns the max ``|shift|``,
+    which is the halo the GT4Py driver must leave as an interior boundary
+    (issue #82). Comment tails are stripped first.
+    """
+    stripped = _COMMENT_RE.sub("", source)
+    halo = 0
+    for match in _SUBSCRIPT_RE.finditer(stripped):
+        for sub in match.group(1).split(","):
+            m = _SHIFT_RE.search(sub.strip())
+            if m:
+                halo = max(halo, abs(int(m.group(1).replace(" ", ""))))
+    return halo
 
 
 def _gt4py_verdict(kernel: dict, source: str):
@@ -361,6 +392,21 @@ def analyze_file(path: str) -> FileReport:
                     "FORT032", abspath,
                     f"routine `{routine}` scores {gt4py.score}/5 for a GT4Py "
                     f"port ({gt4py.label}) — {gt4py.reason}",
+                    routine=routine, line=rline,
+                )
+            )
+
+        # GT4Py halo / domain (issue #82). A stencil shift means the driver
+        # must restrict the domain to the interior — surfaced so a user
+        # sees the halo before a port, from the same source scan.
+        halo = _gt4py_halo(kernel.get("fortran_code") or src)
+        if halo > 0:
+            report.findings.append(
+                _make_finding(
+                    "FORT033", abspath,
+                    f"routine `{routine}` reads a stencil shift up to ±{halo} — "
+                    f"the GT4Py driver restricts the domain by {halo} boundary "
+                    f"layer(s) per shifted axis",
                     routine=routine, line=rline,
                 )
             )

@@ -64,6 +64,7 @@ _RISK_LABELS: dict[str, str] = {
     "FORT030": "JAX portability verdict (Phase 2)",
     "FORT031": "Non-smooth construct (needs a guard or a relaxation)",
     "FORT032": "GT4Py portability score (gt4py.next field operator)",
+    "FORT033": "GT4Py halo/domain (stencil shift needs interior domain)",
 }
 
 
