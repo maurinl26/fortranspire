@@ -219,13 +219,15 @@ def k(n, x):
         assert "n" in report["skipped_args"]     # integer → not differentiated
         assert "x" in report["checked_args"]
 
-    def test_integer_index_arg_reports_needs_fixture_not_a_crash(self):
-        # `idx` is an integer index table — a random probe would index out of
-        # range. gradcheck must report it, not fabricate or crash.
+    def test_unresolved_index_table_reports_needs_fixture_not_a_crash(self):
+        # `idx` is a PROMOTED integer table of unknown shape (no dims, no
+        # resolution) — gradcheck cannot know its rank, so it must report a
+        # fixture, not fabricate or crash.
         k = {**kernel(inputs=("idx", "x")),
              "arg_dtypes": {"idx": "integer", "x": "real"},
              "index_args": ["idx"],
-             "dimensions": {"idx": ["8"], "x": ["8"]}}
+             "free_reads": ["idx"],           # module state, not a declared arg
+             "dimensions": {"x": ["8"]}}       # idx shape unknown
         report = check_kernel(lambda **kw: 0.0, k)
         assert report["status"] == "needs_fixture"
         assert "idx" in report["fixture_args"]
@@ -236,7 +238,8 @@ def k(n, x):
                 **kernel(inputs=("idx", "x")),
                 "arg_dtypes": {"idx": "integer", "x": "real"},
                 "index_args": ["idx"],
-                "dimensions": {"idx": ["8"], "x": ["8"]},
+                "free_reads": ["idx"],
+                "dimensions": {"x": ["8"]},
                 "jax_code": "def k(idx, x):\n    return x[idx]\n",
                 "status": "pending",
             }],
@@ -246,3 +249,23 @@ def k(n, x):
         assert out["gradcheck_passed"] is True            # not a refutation
         assert out["gradcheck_unverified"]                # but flagged unverified
         assert out["kernel_results"][0]["status"] == "needs_fixture"
+
+    def test_resolved_index_table_is_synthesised_and_verified(self):
+        # With the table's shape resolved cross-module, gradcheck builds a valid
+        # degenerate fixture and actually checks the gradient (issue #99).
+        fn = compile_fn("""
+import jax.numpy as jnp
+def k(idx, coef, x):
+    return coef * x[idx]
+""")
+        k = {**kernel(inputs=("idx", "coef", "x")),
+             "arg_dtypes": {"idx": "integer", "coef": "real", "x": "real"},
+             "index_args": ["idx"],
+             "free_reads": ["idx", "coef"],
+             "resolved": {"idx": {"dtype": "integer", "rank": 1},
+                          "coef": {"dtype": "real", "rank": 1}},
+             "dimensions": {"x": ["8"]}}
+        report = check_kernel(fn, k)
+        assert report["status"] == "pass"
+        assert "coef" in report["checked_args"] and "x" in report["checked_args"]
+        assert "idx" in report["skipped_args"]
