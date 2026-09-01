@@ -50,6 +50,7 @@ _DISPATCH: dict[str, tuple[str, str]] = {
     "mcp":        ("fortranspire.server",         "main"),
     "github-app": ("fortranspire.github_app.app",  "main"),
     "gt4py":      ("fortranspire.agent.cli",       "_gt4py_main"),
+    "domain":     ("fortranspire.agent.cli",       "_domain_main"),
 }
 
 _HELP = """\
@@ -73,6 +74,7 @@ Commands:
   port-batch  Parallel Phase 1 port across many files
   translate   Phase 2: Fortran → JAX (experimental)
   gt4py       Fortran → gt4py.next field operators (experimental)
+  domain      Geometry catalogue + software-decomposition proposer
   profile     Performance benchmarking
   mcp         Run the MCP server (default HTTP/SSE; --stdio for vibe / Claude Desktop)
   github-app  Run the GitHub App webhook receiver (/fortranspire commands)

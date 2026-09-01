@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — interactive domain agent: geometry catalogue + decomposition (issue #88)
+
+- **`fortranspire domain`** and `fortranspire/agent/geometry.py` — a
+  catalogue of the grid families used in NWP/climate (octahedral reduced
+  Gaussian, regular Gaussian, HEALPix, cubed sphere, icosahedral, lat-lon)
+  with their resolution nomenclature and point-count formulas (verified
+  against ECMWF Atlas for the Gaussian family; ICON R2B4 = 20 480 checked),
+  plus a **decomposition proposer**: given a geometry + resolution + rank
+  count, it proposes points per rank, halo, partitioning strategy, MPI halo
+  exchange, and a per-rank memory estimate.
+- **The halo is the link to the typed domain model.** Geometry is a
+  modelling choice a kernel does not carry — so the agent is interactive
+  (you give the geometry/resolution) — but the **stencil halo** is read from
+  the Fortran via the typed domain model and feeds the decomposition. The
+  same halo also drives the GT4Py mesh driver (#82).
+
+
 ### Added — GT4Py unstructured driver, aligned to ECMWF's FVM (issue #82)
 
 - **The unstructured mesh model is now generated, not just scored.** The

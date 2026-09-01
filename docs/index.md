@@ -44,6 +44,7 @@ concepts/jax-optimization
 concepts/gt4py-next-patterns
 concepts/gt4py-next-cheatsheet
 concepts/jax-gt4py-cheatsheet
+concepts/geometry-decomposition
 ```
 
 ```{toctree}
