@@ -21,6 +21,11 @@ from fortranspire.agent.nodes_jax._state import JaxKernelInfo, Phase2State
 _PROMPT_VERSION = os.getenv("FORTRANSPIRE_JAX_PROMPT_VERSION", "v1")
 _PROMPT_LANG = os.getenv("FORTRANSPIRE_PROMPT_LANG", "en")
 
+# How many targeted retries the emitter may spend fixing a deterministic defect
+# (a syntax error, a branch on traced array data). Bounded and only spent when a
+# defect is actually present — the point is to tolerate a smaller model.
+_MAX_REPAIRS = int(os.getenv("FORTRANSPIRE_JAX_MAX_REPAIRS", "2"))
+
 # How far the emitted kernel may go to become differentiable.
 #
 #   none      faithful translation. Gradients may be zero or undefined
@@ -81,6 +86,7 @@ def jax_kernel_agent(state: Phase2State) -> dict:
     from fortranspire.jax_smooth import catalogue_for_prompt
     from fortranspire.llm import get_llm
     from fortranspire.prompts.loader import load_prompt
+    from fortranspire.agent.nodes_jax.repair import emit_with_repair
     from langchain_core.messages import HumanMessage, SystemMessage
 
     smoothing = (state.get("smoothing") or "none").lower()
@@ -131,8 +137,10 @@ def jax_kernel_agent(state: Phase2State) -> dict:
         )
 
         try:
-            response = llm.invoke([system, HumanMessage(content="Emit the module.")])
-            code = _strip_markdown(getattr(response, "content", str(response)))
+            code, remaining, repairs = emit_with_repair(
+                llm, system, strip=_strip_markdown,
+                max_repairs=_MAX_REPAIRS, log=print,
+            )
         except Exception as exc:  # noqa: BLE001 - one bad kernel must not kill the run
             print(f"  ✗ {name:<28} LLM error: {type(exc).__name__}: {exc}")
             updated.append({**kernel, "status": "error",
@@ -140,7 +148,10 @@ def jax_kernel_agent(state: Phase2State) -> dict:
             continue
 
         emitted += 1
-        print(f"  ✓ {name:<28} {len(code)} chars")
+        tag = f"{len(code)} chars"
+        if repairs:
+            tag += f" · repaired ×{repairs}" + ("" if not remaining else " (defects remain)")
+        print(f"  ✓ {name:<28} {tag}")
         updated.append({**kernel, "jax_code": code, "status": "pending"})
 
     # One file per kernel, plus a consolidated module for the caller.
