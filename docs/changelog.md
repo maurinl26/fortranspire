@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — GT4Py unstructured driver, aligned to ECMWF's FVM (issue #82)
+
+- **The unstructured mesh model is now generated, not just scored.** The
+  typed domain model detects a connectivity access (`field(e2c(e,c))`) and
+  marks the routine unstructured; the pipeline then generates a **mesh
+  driver** — a LOCAL neighbour dimension, a `FieldOffset` over the
+  connectivity, an `as_connectivity` provider fed the neighbour table, and a
+  `neighbor_sum` reduction. `build_unstructured_driver` in
+  `nodes_gt4py/driver.py`, chosen over the Cartesian driver when the model
+  is unstructured.
+- **Calibrated on FVM**, ECMWF's Finite Volume Module (the GT4Py port of
+  its dycore), verified against Kühnlein et al. (GMD 2019): FVM is
+  node-based (median-dual), its mesh and connectivities come from Atlas with
+  a one-element halo. So the driver decodes an `X2Y` connectivity name into
+  the right source/target dimensions, takes the neighbour table as an
+  argument (it does not synthesise it), and keeps the vertical axis
+  structured. The emission prompt gains the unstructured rule; the spec has
+  an FVM-alignment section.
+- The connectivity table (an integer neighbour list) is passed as a
+  separate `<table>_table` argument, not mistaken for a data field.
+
+
 ### Changed — GT4Py: unstructured mesh is the primary model, not Cartesian
 
 - **`FORT032` no longer penalises an unstructured connectivity access.**

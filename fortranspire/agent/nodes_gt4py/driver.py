@@ -22,6 +22,8 @@ domain/halo mistakes without needing to run anything.
 """
 from __future__ import annotations
 
+import re
+
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
@@ -188,6 +190,98 @@ def validate_domain(model: "DomainModel", operator_source: str = "") -> DomainRe
     return report
 
 
+# ICON/FVM connectivity name letters → gt4py.next mesh dimensions.
+_MESH_LETTER = {"c": "Cell", "e": "Edge", "v": "Vertex", "n": "Vertex"}
+
+
+def _decode_connectivity(table: str) -> tuple[str, str, str]:
+    """Decode an `X2Y` table name into (target_dim, source_dim, local_dim).
+
+    `e2c` (edge-to-cell): each edge indexes its neighbouring cells, so the
+    field lives on `Cell` (source) and is gathered onto `Edge` (target)
+    through a LOCAL `E2C` dimension. A non-`X2Y` name falls back to a
+    generic node/neighbour pair.
+    """
+    m = re.match(r"^([a-z])2([a-z])\d*$", table, re.IGNORECASE)
+    if m:
+        target = _MESH_LETTER.get(m.group(1).lower(), "Vertex")
+        source = _MESH_LETTER.get(m.group(2).lower(), "Vertex")
+        return target, source, table.upper()
+    # Generic neighbour list: node -> its neighbours.
+    return "Vertex", "Vertex", f"{table.upper()}Nbh"
+
+
+def build_unstructured_driver(model: "DomainModel", operator_name: str) -> str:
+    """Generate a gt4py.next **unstructured** driver — the mesh model (#82).
+
+    This is the FVM / icon4py path: a `FieldOffset` over a LOCAL dimension,
+    an `as_connectivity` neighbour table passed at call time, and a
+    `neighbor_sum` reduction. The connectivity table is a runtime input to
+    the driver (Atlas provides it in FVM), not something we synthesise.
+    """
+    lines: list[str] = []
+    lines.append("import gt4py.next as gtx")
+    lines.append("from gt4py.next import Dims, neighbor_sum  # noqa: F401")
+    lines.append("import numpy as np")
+    lines.append(f"from {operator_name}_module import {operator_name}")
+    lines.append("")
+    lines.append("# Node-based unstructured mesh (FVM / icon4py). Dimensions and")
+    lines.append("# LOCAL neighbour axes decoded from the Fortran connectivity names.")
+
+    dims: set[str] = set()
+    offsets: list[tuple[str, str, str, str]] = []  # (name, target, source, local)
+    for conn in model.connectivities:
+        target, source, local = _decode_connectivity(conn.table)
+        name = conn.table.upper()
+        dims.update({target, source})
+        offsets.append((name, target, source, local))
+
+    for dim in sorted(dims):
+        lines.append(f'{dim} = gtx.Dimension("{dim}")')
+    for name, target, source, local in offsets:
+        lines.append(f'{local}Dim = gtx.Dimension("{local}", kind=gtx.DimensionKind.LOCAL)')
+        lines.append(
+            f'{name} = gtx.FieldOffset("{name}", source={source}, '
+            f'target=({target}, {local}Dim))'
+        )
+    lines.append("")
+
+    # The connectivity tables are integer neighbour lists, not data fields —
+    # they come in as `<table>_table` arguments, so exclude them from the
+    # data inputs.
+    table_names = {c.table for c in model.connectivities}
+    inputs = [f for f in model.arrays if "IN" in f.intent and f.name not in table_names]
+    outputs = [f for f in model.arrays if "OUT" in f.intent and f.name not in table_names]
+    table_args = ", ".join(f"{t}_table" for t in sorted(table_names))
+    out_name = outputs[0].name if outputs else "out"
+    in_names = ", ".join(f.name for f in inputs)
+    field_args = ", ".join(f.name for f in inputs + outputs)
+
+    lines.append(f"def run_{operator_name}({field_args}, *, {table_args}):")
+    lines.append('    """Build the connectivity providers (from Atlas in FVM) and run."""')
+    prov_parts = []
+    for name, target, source, local in offsets:
+        table_var = next(c.table for c in model.connectivities if c.table.upper() == name)
+        lines.append(
+            f"    {name}_conn = gtx.as_connectivity([{target}, {local}Dim], "
+            f"codomain={source}, data={table_var}_table, skip_value=-1)"
+        )
+        prov_parts.append(f'"{name}": {name}_conn')
+    lines.append(f"    offset_provider = {{{', '.join(prov_parts)}}}")
+    lines.append(
+        f"    {operator_name}({in_names}, out={out_name}, "
+        f"offset_provider=offset_provider)"
+    )
+    lines.append(f"    return {out_name}")
+    lines.append("")
+    accessed = model.connectivities[0].accessed_field if model.connectivities else "field"
+    off_name = offsets[0][0] if offsets else "OFF"
+    off_local = offsets[0][3] if offsets else "Local"
+    lines.append("# In the operator body, a neighbour reduction is:")
+    lines.append(f"#     neighbor_sum({accessed}({off_name}), axis={off_local}Dim)")
+    return "\n".join(lines) + "\n"
+
+
 def domain_check_agent(state) -> dict:
     """Generate the driver and statically validate the domain/halos (#82).
 
@@ -213,7 +307,10 @@ def domain_check_agent(state) -> dict:
             updated.append(kernel)
             continue
 
-        driver = build_driver(model, name)
+        if getattr(model, "is_unstructured", False):
+            driver = build_unstructured_driver(model, name)
+        else:
+            driver = build_driver(model, name)
         report = validate_domain(model, kernel.get("gt4py_code", ""))
         _save(out_dir / f"{name}_driver.py", driver)
 

@@ -49,6 +49,10 @@ def _python_dtype(basic: str, kind: Optional[str]) -> str:
     return "float64"  # deferred / unknown → the common case, flagged elsewhere
 
 
+# field(table(idx, ...)) — a field indexed through another array (a
+# neighbour table). The outer name is the field, the inner is the table.
+_CONN_RE = re.compile(r"\b([A-Za-z_]\w*)\s*\(\s*([A-Za-z_]\w*)\s*\(")
+
 # Names that conventionally denote the vertical axis in NWP codes.
 _VERTICAL_NAMES = re.compile(r"^(n?lev|k?lev|nz|klev|nflevg|klon_k|k)$", re.IGNORECASE)
 # Names that conventionally denote a horizontal / column-packing axis.
@@ -90,6 +94,23 @@ class FieldSpec:
 
 
 @dataclass
+class ConnectivitySpec:
+    """An unstructured neighbour access — the mesh model (FVM, icon4py).
+
+    Detected from ``field(conn(n, c))``-style indirection. `table` is the
+    Fortran neighbour table name (``e2c``, ``v2e``, a node-neighbour list);
+    `arity` is the number of neighbours if it could be read from a bound,
+    else None. This maps to a gt4py.next ``FieldOffset`` over a LOCAL
+    dimension with an ``as_connectivity`` provider and a ``neighbor_sum``.
+    """
+
+    accessed_field: str         # the field read through the table, e.g. `cellval`
+    table: str                  # the connectivity table, e.g. `e2c`
+    arity: Optional[int] = None
+    reduced: bool = False       # summed/reduced over the neighbours?
+
+
+@dataclass
 class DomainModel:
     """The typed domain of one routine — target-agnostic."""
 
@@ -97,7 +118,13 @@ class DomainModel:
     fields: list[FieldSpec] = field(default_factory=list)
     # Loop variable → axis extent it iterates, e.g. {"k": "nlev"}.
     loop_axes: dict[str, str] = field(default_factory=dict)
+    # Unstructured neighbour accesses — the FVM / icon4py mesh model.
+    connectivities: list["ConnectivitySpec"] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+
+    @property
+    def is_unstructured(self) -> bool:
+        return bool(self.connectivities)
 
     def field(self, name: str) -> Optional[FieldSpec]:
         return next((f for f in self.fields if f.name == name), None)
@@ -240,6 +267,28 @@ def build_domain_model(routine_source: str, *, routine_name: str = "") -> Domain
                 dtype_ambiguous=ambiguous,
             ))
 
+    # Unstructured neighbour accesses: field(table(node, c)) — the mesh model.
+    body = routine.to_fortran()
+    for m in _CONN_RE.finditer(body):
+        outer, table = m.group(1), m.group(2)
+        if outer == table or _same_extent(outer, table):
+            continue
+        # A reduction (sum over neighbours) if the access sits under SUM(...)
+        # or accumulates in a loop — a light signal, refined by the emitter.
+        reduced = bool(re.search(rf"sum\s*\([^)]*{re.escape(outer)}\s*\(",
+                                 body, re.IGNORECASE))
+        if not any(c.accessed_field == outer and c.table == table
+                   for c in model.connectivities):
+            model.connectivities.append(
+                ConnectivitySpec(accessed_field=outer, table=table, reduced=reduced)
+            )
+    if model.connectivities:
+        names = ", ".join(sorted({c.table for c in model.connectivities}))
+        model.notes.append(
+            f"unstructured connectivity access ({names}) — the mesh model "
+            "(FVM / icon4py); maps to neighbor_sum over an as_connectivity table"
+        )
+
     if any(a.role_inferred and a.role != "unknown" for f in model.arrays for a in f.axes):
         model.notes.append("axis roles are heuristic — confirm vertical vs horizontal")
     return model
@@ -267,6 +316,19 @@ def to_gt4py_hints(model: "DomainModel") -> list[str]:
         return ["Scalars only — no fields to dimension."]
 
     hints: list[str] = []
+
+    # Unstructured mesh access comes first — it is the primary model (FVM,
+    # icon4py), not a Cartesian shift.
+    if model.connectivities:
+        for c in model.connectivities:
+            hints.append(
+                f"`{c.accessed_field}` is read through the connectivity "
+                f"`{c.table}` — this is an UNSTRUCTURED mesh access (the FVM / "
+                f"icon4py model). Declare a LOCAL neighbour dimension and a "
+                f"`FieldOffset` over `{c.table.upper()}`, and reduce with "
+                f"`neighbor_sum({c.accessed_field}({c.table.upper()}), "
+                f"axis=<Local>Dim)`. Do NOT treat it as a Cartesian shift."
+            )
 
     # Named dimensions to declare, from the axis roles.
     dims: dict[str, str] = {}

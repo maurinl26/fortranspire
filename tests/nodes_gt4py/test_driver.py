@@ -117,3 +117,77 @@ class TestNodeAndFinding:
         assert _gt4py_halo("x = a(k+2) + a(k-1)") == 2
         assert _gt4py_halo("x = a(i) * b(j)") == 0
         assert _gt4py_halo("! a(k+5) in a comment\nx = a(k)") == 0
+
+
+@pytest.mark.slow
+class TestUnstructuredDriver:
+    """The FVM / icon4py mesh model — the primary unstructured target (#82)."""
+
+    FLUX = """subroutine flux(cellval, e2c, flx, nedges)
+  integer, intent(in) :: nedges, e2c(nedges,2)
+  real(8), intent(in) :: cellval(nedges)
+  real(8), intent(out) :: flx(nedges)
+  integer :: e, c
+  do e = 1, nedges
+     flx(e) = 0.0d0
+     do c = 1, 2
+        flx(e) = flx(e) + cellval(e2c(e,c))
+     end do
+  end do
+end subroutine flux
+"""
+
+    def test_connectivity_is_detected(self):
+        m = build_domain_model(self.FLUX)
+        assert m.is_unstructured
+        assert any(c.table == "e2c" and c.accessed_field == "cellval"
+                   for c in m.connectivities)
+
+    def test_x2y_name_decodes_to_mesh_dimensions(self):
+        from fortranspire.agent.nodes_gt4py.driver import _decode_connectivity
+
+        assert _decode_connectivity("e2c") == ("Edge", "Cell", "E2C")
+        assert _decode_connectivity("c2e") == ("Cell", "Edge", "C2E")
+        assert _decode_connectivity("v2e") == ("Vertex", "Edge", "V2E")
+
+    def test_generic_table_falls_back_to_nodes(self):
+        from fortranspire.agent.nodes_gt4py.driver import _decode_connectivity
+
+        target, source, local = _decode_connectivity("neighbours")
+        assert target == "Vertex" and source == "Vertex"
+
+    def test_driver_uses_as_connectivity_and_local_dim(self):
+        from fortranspire.agent.nodes_gt4py.driver import build_unstructured_driver
+
+        driver = build_unstructured_driver(build_domain_model(self.FLUX), "flux")
+        assert "DimensionKind.LOCAL" in driver
+        assert "as_connectivity([Edge, E2CDim], codomain=Cell" in driver
+        assert "skip_value=-1" in driver
+        assert "neighbor_sum(cellval(E2C)" in driver
+
+    def test_connectivity_table_is_not_a_data_field(self):
+        """`e2c` is an integer neighbour table, passed separately, not a
+        data field in the operator signature."""
+        from fortranspire.agent.nodes_gt4py.driver import build_unstructured_driver
+
+        driver = build_unstructured_driver(build_domain_model(self.FLUX), "flux")
+        assert "e2c_table" in driver
+        assert "flux(cellval, out=flx" in driver  # e2c not among the field args
+
+    def test_driver_is_valid_python(self):
+        import ast
+
+        from fortranspire.agent.nodes_gt4py.driver import build_unstructured_driver
+
+        ast.parse(build_unstructured_driver(build_domain_model(self.FLUX), "flux"))
+
+    def test_domain_check_picks_the_unstructured_driver(self):
+        from fortranspire.agent.nodes_gt4py.driver import domain_check_agent
+
+        m = build_domain_model(self.FLUX)
+        state = {"kernel_results": [{"routine_name": "flux", "fortran_code": self.FLUX,
+                                     "domain_model": m, "gt4py_code": "x"}],
+                 "executed_agents": []}
+        out = domain_check_agent(state)
+        driver = out["kernel_results"][0]["gt4py_driver"]
+        assert "as_connectivity" in driver  # the unstructured path, not Cartesian

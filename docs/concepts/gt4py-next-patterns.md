@@ -312,6 +312,42 @@ not the baseline.
 
 ---
 
+### Aligned to ECMWF's FVM (the reference GT4Py model)
+
+The unstructured target is calibrated on **FVM**, ECMWF's Finite Volume
+Module — the GT4Py port of its finite-volume dynamical core. Two facts from
+the FVM design (Kühnlein et al., *GMD* 2019) shape the mapping:
+
+- **FVM is node-based (median-dual).** Control volumes are built around grid
+  **nodes** (vertices); "outer loops over nodes compute the required
+  quantities on edges on the fly." So the primary field dimension is a
+  vertex/node one, and the neighbour access is node-to-node through edges —
+  not the cell/edge-centric layout ICON leads with. The pipeline decodes an
+  `X2Y` connectivity name (`e2c`, `v2e`, …) into the right source/target
+  dimensions and falls back to a node/neighbour pair for a generic table.
+- **The mesh and connectivities come from Atlas**, with a one-element halo.
+  The pipeline does **not** synthesise the neighbour table — it generates a
+  driver that takes the table as an argument (Atlas provides it) and wires
+  it with `as_connectivity`.
+
+The generated unstructured driver:
+
+```python
+Edge = gtx.Dimension("Edge"); Cell = gtx.Dimension("Cell")
+E2CDim = gtx.Dimension("E2C", kind=gtx.DimensionKind.LOCAL)
+E2C = gtx.FieldOffset("E2C", source=Cell, target=(Edge, E2CDim))
+
+def run_flux(cellval, flx, *, e2c_table):
+    E2C_conn = gtx.as_connectivity([Edge, E2CDim], codomain=Cell,
+                                   data=e2c_table, skip_value=-1)
+    flux(cellval, out=flx, offset_provider={"E2C": E2C_conn})
+    return flx
+#   operator body:  neighbor_sum(cellval(E2C), axis=E2CDim)
+```
+
+The vertical axis (§8) stays structured finite-difference, exactly as in
+FVM — the mesh is horizontal-only.
+
 ## 8. Vertical recurrence → `scan_operator`
 
 A loop-carried dependency along the vertical — `x(k)` depends on `x(k-1)` —
