@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — GT4Py domain & halo (issue #82)
+
+- **Deterministic driver generation.** From the typed domain model, the
+  GT4Py pipeline now generates the driver — the `Dimension` and
+  `FieldOffset` declarations, the offset providers, and the **interior
+  domain** — where the geometry lives. Offsets `{-1,+1}` on an axis give an
+  interior domain `[1, n-1)`: the boundary layers are read by the stencil
+  and cannot be written. `fortranspire/agent/nodes_gt4py/driver.py`, run by
+  a new `domain_check` node after `type_check`.
+- **Static domain/halo validation** — no gt4py execution. It reports the
+  halo per axis and flags a shift the operator performs that has no
+  matching offset provider (the "reads out of bounds because the domain
+  was not restricted" class). Deterministic, needs no toolchain.
+- **`FORT033` — GT4Py halo/domain finding** in `analyze` / `explain`,
+  surfacing the stencil halo before a port.
+- Honest scope: *executing* a Cartesian-offset operator does not work on
+  the embedded backend (it wants a neighbour table) and needs a compiled
+  `gtfn` toolchain, so the pipeline generates and statically validates the
+  driver; end-to-end execution is a follow-up. The static domain reasoning,
+  which is where the mistakes are, needs neither.
+
+
 ### Added — typed domain model, shared by both functional targets
 
 - **`fortranspire/agent/domain_model.py`** — scans a Fortran routine and
