@@ -185,6 +185,38 @@ def parser_phase1(state: Phase1State) -> dict:
             except Exception as _exc:  # noqa: BLE001 - analysis must never break parsing
                 free_reads, free_writes, arg_dtypes, index_args = [], [], {}, []
                 print(f"  (free-symbol analysis skipped for {routine.name}: {_exc})")
+
+            # Cross-module resolution (#99 Stage 0): resolve the shapes/types of
+            # promoted module state from the modules that declare it (the
+            # routine's own directory, plus any FORTRANSPIRE_MODULE_PATH dirs).
+            # This lifts gradcheck's `needs_fixture` when an index table's shape
+            # was the only thing missing. Never breaks parsing.
+            resolved: Dict[str, Any] = {}
+            if free_reads or free_writes:
+                try:
+                    from fortranspire.agent.resolve import (
+                        default_search_dirs, resolve_for_routine,
+                    )
+                    extra = list(state.get("module_search_dirs") or [])
+                    env_path = os.getenv("FORTRANSPIRE_MODULE_PATH", "")
+                    extra += [d for d in env_path.split(os.pathsep) if d]
+                    dirs = default_search_dirs(filepath, extra)
+                    syms = resolve_for_routine(routine, dirs)
+                    referenced = {n.lower() for n in (free_reads + free_writes)}
+                    for low, sym in syms.items():
+                        if low in referenced:
+                            resolved[low] = {
+                                "dtype": sym.dtype, "rank": sym.rank,
+                                "is_parameter": sym.is_parameter, "module": sym.module,
+                            }
+                            # Resolution is authoritative for a promoted symbol's type.
+                            if sym.dtype != "unknown":
+                                arg_dtypes[low] = sym.dtype
+                    if resolved:
+                        print(f"  Resolved {len(resolved)} module symbol(s) for "
+                              f"{routine.name} from USE modules")
+                except Exception as _exc:  # noqa: BLE001
+                    print(f"  (module resolution skipped for {routine.name}: {_exc})")
             if free_reads or free_writes:
                 print(f"  Free module state in {routine.name}: "
                       f"+{len(free_reads)} read, +{len(free_writes)} written")
@@ -205,6 +237,7 @@ def parser_phase1(state: Phase1State) -> dict:
                 "free_writes":        free_writes,
                 "arg_dtypes":         arg_dtypes,
                 "index_args":         index_args,
+                "resolved":           resolved,
                 "status":             "pending",
                 "error_log":          "",
             })

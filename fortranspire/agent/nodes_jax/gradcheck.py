@@ -124,6 +124,46 @@ def _make_inputs(kernel: JaxKernelInfo, seed: int = 0) -> Dict[str, Any]:
     return values
 
 
+def _resolved_inputs(kernel: JaxKernelInfo, extent: int, seed: int = 0) -> Dict[str, Any]:
+    """Build a valid *degenerate* fixture from cross-module resolution (#99).
+
+    Every axis is sized to the same ``extent``, so any subscript in ``[1, extent]``
+    is in range whichever axis it indexes — this sidesteps mapping a deferred
+    ``(:,:,:)`` shape to its symbolic extents. Integer tables and counts are
+    filled with 1 (a valid index, and a one-iteration loop count); an integer
+    scalar used as a subscript is 1, a bound is ``extent``; real arrays are
+    random (the differentiable payload). It is not physically meaningful — it is
+    a coherent shape at which differentiability *is* meaningful.
+    """
+    import jax.numpy as jnp
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    resolved = {k.lower(): v for k, v in (kernel.get("resolved") or {}).items()}
+    dtypes = {k.lower(): v for k, v in (kernel.get("arg_dtypes") or {}).items()}
+    dims = kernel.get("dimensions") or {}
+    index = {a.lower() for a in (kernel.get("index_args") or [])}
+    values: Dict[str, Any] = {}
+
+    for arg in kernel["inputs"]:
+        low = arg.lower()
+        r = resolved.get(low, {})
+        rank = r.get("rank", len(dims.get(arg, [])))
+        dt = r.get("dtype") or dtypes.get(low, "unknown")
+        shape = tuple([extent] * rank)
+
+        if dt == "integer":
+            if rank == 0:
+                values[arg] = 1 if low in index else extent
+            else:
+                values[arg] = jnp.ones(shape, dtype=jnp.int32)
+        elif rank:
+            values[arg] = jnp.asarray(rng.standard_normal(shape))
+        else:
+            values[arg] = float(rng.standard_normal())
+    return values
+
+
 def _scalarise(fn: Callable, dyn_names: List[str], static_vals: Dict[str, Any]) -> Callable:
     """Reduce the kernel's outputs to one scalar so `jax.grad` is defined.
 
@@ -186,22 +226,42 @@ def check_kernel(
     index_args = [n for n in names
                   if n.lower() in {a.lower() for a in (kernel.get("index_args") or [])}]
     if index_args:
-        return {
-            "status": "needs_fixture",
-            "jit": False,
-            "checked_args": [],
-            "skipped_args": names,
-            "fixture_args": index_args,
-            "reason": (
-                "integer index topology (" + ", ".join(index_args) + ") cannot be "
-                "synthesised from this file — the emitted kernel is well-formed but "
-                "differentiability needs a valid index fixture (resolve array shapes "
-                "cross-module to lift this)."
-            ),
-            "failures": [],
-        }
+        # Stage 0 (#99): if cross-module resolution gave the index tables' shapes,
+        # build a valid degenerate fixture and run. Otherwise the shape is the
+        # missing piece — report it, naming what resolved and what did not.
+        resolved = {k.lower(): v for k, v in (kernel.get("resolved") or {}).items()}
+        dims = kernel.get("dimensions") or {}
+        promoted = {n.lower() for n in
+                    (kernel.get("free_reads") or []) + (kernel.get("free_writes") or [])}
 
-    inputs = _make_inputs(kernel, seed=seed)
+        # A promoted index symbol with no shape info anywhere (not resolved, not
+        # locally declared) has unknown rank — we cannot tell a scalar index
+        # from a lookup table, so we must not fabricate it. Declared arguments
+        # carry their own shape and are always synthesisable.
+        unresolved = [a for a in index_args
+                      if a.lower() in promoted
+                      and a.lower() not in resolved
+                      and not dims.get(a)]
+        if unresolved:
+            got = sorted(a for a in index_args if a.lower() in resolved)
+            return {
+                "status": "needs_fixture",
+                "jit": False,
+                "checked_args": [],
+                "skipped_args": names,
+                "fixture_args": index_args,
+                "reason": (
+                    "integer index topology needs shapes to synthesise a valid "
+                    f"fixture — unresolved: {', '.join(unresolved)}"
+                    + (f"; resolved: {', '.join(got)}" if got else "")
+                    + " (put the declaring module on the search path — "
+                    "FORTRANSPIRE_MODULE_PATH — to lift this)."
+                ),
+                "failures": [],
+            }
+        inputs = _resolved_inputs(kernel, _DEFAULT_EXTENT, seed=seed)
+    else:
+        inputs = _make_inputs(kernel, seed=seed)
 
     # Integer bounds/flags are bound statically (see _scalarise); the rest are
     # the dynamic call, and only the float ones carry a gradient.

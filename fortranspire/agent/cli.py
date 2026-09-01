@@ -53,7 +53,8 @@ def _write_output(output_path: str, content: str, kind: str) -> None:
     print(f"\n   Written → {output_path}")
 
 
-def translate_file(filepath: str, *, smoothing: str = "none") -> int:
+def translate_file(filepath: str, *, smoothing: str = "none",
+                   module_path: list[str] | None = None) -> int:
     """Phase 2 — Fortran → functional refactoring → JAX (issue #73).
 
     Runs ``translation_app_phase2``: the graph that derives the functional
@@ -84,6 +85,7 @@ def translate_file(filepath: str, *, smoothing: str = "none") -> int:
         "kernel_results": [],
         "is_program": False,
         "smoothing": smoothing,
+        "module_search_dirs": module_path or [],
         "executed_agents": [],
     }
     final_state = translation_app_phase2.invoke(initial_state)
@@ -408,10 +410,21 @@ def _translate_main():
             "relaxations are named in the emitted code."
         ),
     )
+    parser.add_argument(
+        "--module-path", action="append", metavar="DIR", default=[],
+        help=(
+            "Directory holding the modules a routine USEs, so their symbols' "
+            "types/shapes resolve (issue #99). The routine's own directory is "
+            "always searched; add a mechanism dir here to resolve promoted state "
+            "and lift a gradcheck 'needs fixture'. Repeatable; "
+            "FORTRANSPIRE_MODULE_PATH also works."
+        ),
+    )
     args = parser.parse_args()
     # Propagate the gradient-check verdict: a failed check must fail the
     # command, not just print a warning (issue #73).
-    return translate_file(args.filepath, smoothing=args.smoothing)
+    return translate_file(args.filepath, smoothing=args.smoothing,
+                          module_path=args.module_path)
 
 
 def run_translate():
