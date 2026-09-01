@@ -41,6 +41,7 @@ concepts/mistral-integration
 concepts/le-chat-connector
 concepts/legacy-documentation
 concepts/jax-optimization
+concepts/gt4py-next-patterns
 ```
 
 ```{toctree}
