@@ -22,7 +22,7 @@ class Phase_GT4Py_State(TypedDict, total=False):
     smoothing: str
     # GT4Py outputs
     gt4py_module: str
-    domain_validated: bool
-    domain_check_skipped: bool
-    domain_log: str
+    type_checked: bool
+    type_check_skipped: bool
+    type_check_log: str
     executed_agents: List[str]

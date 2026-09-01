@@ -14,7 +14,7 @@ Both targets take the same route out of imperative Fortran:
 
 ```
 parse → extract → functionalize → ┬─ jax_kernel   → gradcheck        (JAX)
-                                  └─ gt4py_kernel → domain_validate  (GT4Py)
+                                  └─ gt4py_kernel → type_check  (GT4Py)
 ```
 
 The `functionalize` node is **the same node**. It turns the INTENT map into
@@ -161,7 +161,7 @@ differently, and both checks are **blocking**:
   `jax.grad` is compared against central finite differences. A kernel that
   traces but has a wrong gradient is caught. (It cannot see a locally-flat
   transform like `floor` — a documented limit.)
-- **gt4py.next → `domain_validate`.** The output must be a *well-typed field
+- **gt4py.next → `type_check`.** The output must be a *well-typed field
   operator*: forcing `.foast_stage` runs gt4py's own frontend type checker,
   which raises `DSLError` on a scalar returned where a field is declared, an
   illegal construct, undefined names. No execution, no GPU.

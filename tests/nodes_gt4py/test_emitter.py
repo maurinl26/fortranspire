@@ -51,7 +51,7 @@ class TestEmissionNode:
 
 class TestValidationSkip:
     def test_type_check_skips_when_gt4py_absent(self, monkeypatch):
-        import fortranspire.agent.nodes_gt4py.domain_validate as dv
+        import fortranspire.agent.nodes_gt4py.type_check as dv
 
         monkeypatch.setattr(dv, "_gt4py_available", lambda: False)
         report = dv.type_check_source("import gt4py.next\n")
@@ -60,7 +60,7 @@ class TestValidationSkip:
         assert "not installed" in report["reason"]
 
     def test_node_reports_skip_not_failure_without_gt4py(self, monkeypatch):
-        import fortranspire.agent.nodes_gt4py.domain_validate as dv
+        import fortranspire.agent.nodes_gt4py.type_check as dv
 
         monkeypatch.setattr(dv, "_gt4py_available", lambda: False)
         state = {
@@ -68,16 +68,16 @@ class TestValidationSkip:
                                 "status": "pending"}],
             "executed_agents": [],
         }
-        out = dv.domain_validate_agent(state)
+        out = dv.type_check_agent(state)
         # A skip is neither a pass nor a failure — the caller must not read
         # "no failures" as validation.
-        assert out["domain_check_skipped"] is True
-        assert out["domain_validated"] is False
+        assert out["type_check_skipped"] is True
+        assert out["type_checked"] is False
 
     def test_validation_uses_a_real_file_not_exec(self):
         """gt4py reads operator source via inspect.getsourcelines, so the
         node must write a file — never exec a string like the JAX path."""
-        import fortranspire.agent.nodes_gt4py.domain_validate as dv
+        import fortranspire.agent.nodes_gt4py.type_check as dv
 
         src = inspect.getsource(dv._load_module_from_source)
         assert "write_text" in src
@@ -102,8 +102,8 @@ class TestGraph:
             ("parser", "extractor"),
             ("extractor", "functionalize"),
             ("functionalize", "gt4py_kernel"),
-            ("gt4py_kernel", "domain_validate"),
-            ("domain_validate", "__end__"),
+            ("gt4py_kernel", "type_check"),
+            ("type_check", "__end__"),
         }
 
     def test_functionalize_is_the_phase2_node_reused(self):
@@ -146,8 +146,8 @@ class TestCli:
         assert "-> int" in str(inspect.signature(gt4py_file))
         src = inspect.getsource(gt4py_file)
         # Skip (no gt4py) returns 0; a failed type-check returns 1.
-        assert "domain_check_skipped" in src
-        assert "domain_validated" in src
+        assert "type_check_skipped" in src
+        assert "type_checked" in src
 
 
 # ── Prompt ─────────────────────────────────────────────────────────────────

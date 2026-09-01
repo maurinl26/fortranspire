@@ -41,7 +41,7 @@ emission node and the portability rules differ.
 ```
 Phase 1 (OpenACC):  parse → extract → pure_elemental → openacc → cython → validate
 Phase 2 (JAX):      parse → extract → functionalize → jax_kernel   → gradcheck
-GT4Py (this):       parse → extract → functionalize → gt4py_kernel → domain_validate
+GT4Py (this):       parse → extract → functionalize → gt4py_kernel → type_check
                                       └── shared ──┘   └── new ──┘
 ```
 
@@ -424,8 +424,14 @@ Two facts learned by running it, both of which shape the pipeline:
    the body against the annotated signature and raises `DSLError` on a
    mismatch (a scalar returned where a field is declared, an illegal
    construct) — with no offset providers and no backend compile. That is
-   what `domain_validate` does, and it is stronger than the JAX tracing
+   what `type_check` does, and it is stronger than the JAX tracing
    check.
+
+The type-check validates the **operator**, not the geometric **domain**.
+The `domain=` a program writes, the offset providers, and halo/boundary
+handling live in the *driver* and are a separate, harder problem — the one
+icon4py and Pace frame explicitly. That is tracked in issue #82; this
+target currently emits and type-checks the operator, and stops there.
 
 One nuance still open, and it is an *execution* detail, not a
 correctness one: running a Cartesian-offset operator on the embedded
@@ -442,7 +448,7 @@ per backend.
 | `functionalize` (INTENT → returns, purity) | exists (Phase 2) | **shared unchanged** |
 | `FORT032` detection in `analyze`/`explain` | to build | mirrors `FORT030`/`FORT031` |
 | `gt4py_kernel` emission node | to build | mirrors `jax_kernel` |
-| `domain_validate` (import + backend compile) | to build | mirrors `gradcheck`'s structure |
+| `type_check` (frontend type-check) | to build | mirrors `gradcheck`'s structure |
 | `prompts/gt4py_kernel/{en,fr}/v1.md` | to build | mirrors `jax_kernel` prompts |
 | `fortranspire gt4py` CLI verb | to build | mirrors `translate` |
 

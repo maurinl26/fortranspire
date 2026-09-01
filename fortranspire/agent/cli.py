@@ -112,17 +112,18 @@ def gt4py_file(filepath: str) -> int:
         for kernel in blocked:
             print(f"     - {kernel['routine_name']}: {kernel.get('purity_reason', '')}")
 
-    if final_state.get("domain_check_skipped"):
+    if final_state.get("type_check_skipped"):
         print("\n⚠️  gt4py not installed — operators emitted but NOT type-checked.")
         print("   `pip install gt4py` to validate them against gt4py.next.")
         return 0
 
-    if not final_state.get("domain_validated", False):
+    if not final_state.get("type_checked", False):
         print("\n❌ A field operator failed the gt4py type-check.")
-        print(final_state.get("domain_log", ""))
+        print(final_state.get("type_check_log", ""))
         return 1
 
     print("\n✅ Field operators emitted and type-checked against gt4py.next.")
+    print("   (type-check only — the domain/halos live in the driver, issue #82.)")
     return 0
 
 

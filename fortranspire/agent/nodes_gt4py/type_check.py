@@ -1,12 +1,29 @@
-"""GT4Py validation — type-check each emitted field operator (issue #42).
+"""GT4Py type-check — verify each emitted field operator is well-typed (#42).
 
-The gt4py analogue of the JAX `gradcheck` node, and the check is stronger:
-gt4py.next has its own frontend type-checker. Accessing a field operator's
-``.foast_stage`` runs it — it verifies the body against the annotated
-signature (field dimensions, dtypes, that a scalar is not returned where a
-field is declared, that only DSL-legal constructs appear) and raises a
-``DSLError`` when the emitted operator is malformed. No execution, no
-offset providers, no backend compile needed.
+The gt4py analogue of the JAX `gradcheck` node. Accessing a field
+operator's ``.foast_stage`` runs gt4py.next's own frontend type checker:
+it verifies the body against the annotated signature (field dimensions,
+dtypes, that a scalar is not returned where a field is declared, that only
+DSL-legal constructs appear) and raises a ``DSLError`` when the operator is
+malformed. No execution, no offset providers, no backend compile needed.
+
+**What this does NOT check — on purpose.** It validates the *operator*, not
+the *domain*. In gt4py.next the geometry lives in the driver, not the field
+operator, and it is a separate, harder problem:
+
+* the ``domain=`` a ``program`` writes (which range of each dimension);
+* the **offset providers** — a ``CartesianConnectivity`` for a structured
+  shift, an ``as_connectivity`` neighbour table for an unstructured mesh;
+* **halos / boundaries** — a stencil that reads ``a(Koff[1])`` at the top
+  layer reads out of bounds unless the domain is restricted to the
+  interior or the field carries halo points.
+
+None of that is visible to the frontend type check. Proof from the field:
+the ``vertical_avg`` example type-checks cleanly and then fails at *call*
+time on the offset provider — the domain is a runtime concern. Validating
+it (the way icon4py and Pace frame domain and halo correctness) is tracked
+separately in issue #82; this node deliberately stops at "is it a
+well-typed operator".
 
 Two facts about gt4py.next drive the design, both learned by running it:
 
@@ -118,10 +135,10 @@ def type_check_source(code: str, *, module_name: str = "gt4py_kernel") -> Dict[s
     return report
 
 
-def domain_validate_agent(state) -> dict:
+def type_check_agent(state) -> dict:
     """Type-check every emitted gt4py operator. Blocking when gt4py is present."""
     print(f"\n{SEP}")
-    print("  [GT4Py validate] type-checking field operators against gt4py.next")
+    print("  [GT4Py type-check] frontend type-check (operator, not domain/halos)")
     print(SEP)
 
     kernels = state.get("kernel_results", [])
@@ -172,8 +189,8 @@ def domain_validate_agent(state) -> dict:
         "kernel_results": updated,
         # A skip (no gt4py) is not a pass and not a failure — the caller must
         # not read absence of failures as validation.
-        "domain_validated": bool(any_checked) and not failures,
-        "domain_check_skipped": not _gt4py_available(),
-        "domain_log": "\n".join(logs),
-        "executed_agents": state.get("executed_agents", []) + ["domain_validate"],
+        "type_checked": bool(any_checked) and not failures,
+        "type_check_skipped": not _gt4py_available(),
+        "type_check_log": "\n".join(logs),
+        "executed_agents": state.get("executed_agents", []) + ["type_check"],
     }

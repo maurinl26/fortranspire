@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Renamed the GT4Py validation node `domain_validate` → `type_check`.**
+  The old name over-promised: the node runs gt4py.next's frontend type
+  checker (`.foast_stage`), which validates that the emitted operator is
+  well-typed — **not** the geometric domain, offset providers, or halos,
+  which live in the driver and are a separate concern (now tracked in
+  #82, framed on how icon4py and Pace handle domain/halo correctness).
+  The node's docstring now says explicitly what it does not check.
+
+
 ### Added
 
 - **`docs/concepts/jax-gt4py-cheatsheet.md`** — a side-by-side of the two
@@ -21,7 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **`fortranspire gt4py`** — Fortran → gt4py.next field operators. The
   pipeline is the Phase 2 graph with the emission and validation swapped:
-  `parse → extract → functionalize → gt4py_kernel → domain_validate`. The
+  `parse → extract → functionalize → gt4py_kernel → type_check`. The
   first three nodes are shared with Phase 1, and **`functionalize` is the
   Phase 2 (JAX) node reused unchanged** — gt4py.next is functional, so the
   same purity analysis decides both targets.
@@ -29,7 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mirroring `jax_kernel`, with externalised prompts
   `prompts/gt4py_kernel/{en,fr}/v1.md`. The prompt teaches the
   correspondences from the spec and pins the confirmed gt4py.next ≥ 1.2 API.
-- **`domain_validate`** — type-checks each emitted operator against
+- **`type_check`** — type-checks each emitted operator against
   gt4py.next's own frontend by forcing its `.foast_stage`, which raises
   `DSLError` on a malformed operator (a scalar where a field is declared,
   an illegal construct) with no execution or backend compile. Two facts
