@@ -21,6 +21,7 @@ from fortranspire.agent.nodes_jax.lint import (
     data_dependent_branches,
     data_dependent_loops,
     disallowed_imports,
+    missing_imports,
 )
 
 
@@ -33,6 +34,14 @@ def emission_defects(code: str) -> List[str]:
         # Unparseable code can't be linted further — report just this.
         return [f"Python syntax error at line {exc.lineno}: {exc.msg}"]
 
+    for miss in missing_imports(code):
+        fix = {"jax": "import jax", "jnp": "import jax.numpy as jnp",
+               "np": "import numpy as np", "numpy": "import numpy",
+               "lax": "from jax import lax", "scipy": "import jax.scipy"}.get(
+                   miss["name"], f"import {miss['name']}")
+        defects.append(
+            f"uses `{miss['name']}.…` but never imports it — add `{fix}` at the top."
+        )
     for imp in disallowed_imports(code):
         defects.append(
             f"line {imp['line']}: `import {imp['module']}` — this module does not "

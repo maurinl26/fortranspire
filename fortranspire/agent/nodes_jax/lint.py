@@ -122,6 +122,45 @@ def disallowed_imports(code: str) -> List[Dict]:
     return hits
 
 
+# Module aliases the emitted code commonly uses; flagged when referenced via
+# attribute access (`jax.lax.switch`) without a matching import — the classic
+# `import jax.numpy as jnp` (which binds `jnp`, not `jax`) then `jax.lax…`.
+_KNOWN_ROOTS = {"jax", "jnp", "np", "numpy", "lax", "scipy"}
+
+
+def missing_imports(code: str) -> List[Dict]:
+    """Module roots used via attribute access but never imported/bound."""
+    try:
+        tree = ast.parse(code)
+    except SyntaxError:
+        return []
+
+    bound: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                bound.add(a.asname or a.name.split(".")[0])
+        elif isinstance(node, ast.ImportFrom):
+            for a in node.names:
+                bound.add(a.asname or a.name)
+        elif isinstance(node, ast.Assign):
+            for tgt in node.targets:
+                bound |= _target_names(tgt)
+        elif isinstance(node, ast.FunctionDef):
+            bound |= {a.arg for a in node.args.args}
+
+    used: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Attribute):
+            root = node
+            while isinstance(root, ast.Attribute):
+                root = root.value
+            if isinstance(root, ast.Name) and root.id in _KNOWN_ROOTS:
+                used.add(root.id)
+
+    return [{"name": r} for r in sorted(used - bound)]
+
+
 def data_dependent_loops(code: str) -> List[Dict]:
     """Python `for x in range(<array-derived value>)` — a data-dependent loop
     bound, which cannot be a concrete trip count under `jit`."""

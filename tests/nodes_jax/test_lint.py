@@ -3,7 +3,20 @@ from fortranspire.agent.nodes_jax.lint import (
     data_dependent_branches,
     data_dependent_loops,
     disallowed_imports,
+    missing_imports,
 )
+
+
+def test_missing_import_of_used_module_root():
+    # uses `jax.lax` but only imported `jnp`
+    code = "import jax.numpy as jnp\ndef k(x):\n    return jax.lax.switch(0, [lambda: x], x)\n"
+    assert missing_imports(code) == [{"name": "jax"}]
+
+
+def test_all_used_roots_imported_is_clean():
+    code = ("import jax\nimport jax.numpy as jnp\n"
+            "def k(x):\n    return jax.lax.switch(0, [lambda: x], jnp.sum(x))\n")
+    assert missing_imports(code) == []
 
 
 def test_disallowed_import_of_a_fortran_module():
