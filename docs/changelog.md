@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — GT4Py target groundwork (issue #42)
+
+- **Specification** `docs/concepts/gt4py-next-patterns.md` — the didactic
+  reference for Fortran → **gt4py.next** (the functional frontend, not the
+  legacy gtscript the original scope described), with every construct set
+  beside its counterpart and the reasoning. Grounded in the current
+  gt4py.next repo API; volatile API-surface points pinned as "verify
+  against the installed version".
+- **`FORT032` — GT4Py portability score**, surfaced by `analyze` and
+  `explain`. Deterministic, no LLM: it scores each routine 5 (clean field
+  operator) / 3 (needs `where`/`scan_operator`) / 1 (unstructured or hard)
+  / 0 (does not map), so a user triages GT4Py targets before paying for a
+  port. New `fortranspire/agent/nodes_gt4py/portability.py`. The score's
+  floor is the **same** purity verdict the JAX target uses (via the Phase 2
+  `functionalize` node), so the two targets never disagree about whether a
+  routine can be pure. Only routines below 5 are annotated, like FORT030.
+- **Cheat-sheet** `docs/concepts/gt4py-next-cheatsheet.md` — the fast
+  side-by-side lookup, mirroring the Fortran-patterns summary table.
+
+
 ### Fixed
 
 - **`bench` no longer gates on `gfortran_seconds` (issue #72).** It clocks

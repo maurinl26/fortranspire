@@ -69,6 +69,16 @@ RULES: dict[str, dict[str, str]] = {
         "summary": "COMMON block detected — incompatible with PURE/ELEMENTAL",
         "help": "Replace COMMON with a MODULE of explicit arguments; the LLM extractor handles this.",
     },
+    "FORT032": {
+        "name": "Gt4PyPortability",
+        "severity": "note",
+        "summary": "GT4Py portability — how good a gt4py.next field operator this makes",
+        "help": (
+            "See docs/concepts/gt4py-next-patterns.md. Score 5: clean field "
+            "operator. 3: needs a construct (where / scan_operator). 1: "
+            "unstructured or hard. 0: does not map (I/O, hidden state)."
+        ),
+    },
     "FORT031": {
         "name": "NonSmoothConstruct",
         "severity": "note",
@@ -205,6 +215,18 @@ def _non_smooth_constructs(source: str) -> list[tuple[str, str, int | None]]:
     return found
 
 
+def _gt4py_verdict(kernel: dict, source: str):
+    """Score this routine for a gt4py.next port (issue #42).
+
+    Delegates to the GT4Py scorer, which reuses the same purity verdict as
+    `_jax_verdict` for its floor — so the two targets never disagree on
+    whether a routine can be a pure function.
+    """
+    from fortranspire.agent.nodes_gt4py.portability import score_routine
+
+    return score_routine(kernel, kernel.get("fortran_code") or source)
+
+
 def _jax_verdict(kernel: dict) -> tuple[str, str]:
     """Ask the Phase 2 functionalize node whether this routine can be pure.
 
@@ -324,6 +346,21 @@ def analyze_file(path: str) -> FileReport:
                 _make_finding(
                     "FORT030", abspath,
                     f"routine `{routine}` is `{verdict}` for a JAX port — {reason}",
+                    routine=routine, line=rline,
+                )
+            )
+
+        # GT4Py portability (issue #42). Same discipline as FORT030: only
+        # report a routine that is *not* a clean field operator, so a
+        # perfect stencil does not clutter Code Scanning. The reuse of the
+        # purity verdict as the floor keeps the two targets consistent.
+        gt4py = _gt4py_verdict(kernel, src)
+        if gt4py.score < 5:
+            report.findings.append(
+                _make_finding(
+                    "FORT032", abspath,
+                    f"routine `{routine}` scores {gt4py.score}/5 for a GT4Py "
+                    f"port ({gt4py.label}) — {gt4py.reason}",
                     routine=routine, line=rline,
                 )
             )

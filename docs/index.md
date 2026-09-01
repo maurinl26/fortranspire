@@ -42,6 +42,7 @@ concepts/le-chat-connector
 concepts/legacy-documentation
 concepts/jax-optimization
 concepts/gt4py-next-patterns
+concepts/gt4py-next-cheatsheet
 ```
 
 ```{toctree}

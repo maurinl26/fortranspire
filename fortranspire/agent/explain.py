@@ -63,6 +63,7 @@ _RISK_LABELS: dict[str, str] = {
     "FORT011": "!$acc present but no OpenACC-capable compiler available",
     "FORT030": "JAX portability verdict (Phase 2)",
     "FORT031": "Non-smooth construct (needs a guard or a relaxation)",
+    "FORT032": "GT4Py portability score (gt4py.next field operator)",
 }
 
 
