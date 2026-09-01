@@ -19,8 +19,17 @@ _PROMPT_LANG = os.getenv("FORTRANSPIRE_PROMPT_LANG", "en")
 
 
 def _render_hints(kernel: dict) -> str:
-    """Reuse the functionalize hints, plus GT4Py-specific dimension notes."""
+    """functionalize hints + the deterministic typed domain model."""
     hints = list(kernel.get("hints") or [])
+
+    # The typed domain model (dimensions, dtypes, offsets, halo) is derived
+    # deterministically from Loki — the emitter follows it rather than
+    # re-inferring types from the source.
+    model = kernel.get("domain_model")
+    if model is not None:
+        from fortranspire.agent.domain_model import to_gt4py_hints
+
+        hints = to_gt4py_hints(model) + hints
 
     dims = kernel.get("dimensions") or {}
     arrays = [a for a in (kernel.get("intent_map") or {}) if dims.get(a)]

@@ -101,7 +101,8 @@ class TestGraph:
             ("init", "parser"),
             ("parser", "extractor"),
             ("extractor", "functionalize"),
-            ("functionalize", "gt4py_kernel"),
+            ("functionalize", "domain_model"),   # typed model before emission
+            ("domain_model", "gt4py_kernel"),
             ("gt4py_kernel", "type_check"),
             ("type_check", "__end__"),
         }
