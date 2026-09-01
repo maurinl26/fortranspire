@@ -70,6 +70,11 @@ class Phase2State(TypedDict):
     # why it is a mode rather than a default.
     smoothing: str
 
+    # Extra directories holding the modules a routine USEs, so their symbols'
+    # types/shapes resolve (#99). Declared as a channel so `--module-path`
+    # survives between graph nodes.
+    module_search_dirs: List[str]
+
     # Phase 2 outputs
     functionalized: bool
     jax_module: str                   # consolidated importable module
