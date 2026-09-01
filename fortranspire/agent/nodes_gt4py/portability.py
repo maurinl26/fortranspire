@@ -15,9 +15,14 @@ The rubric is the one written in `docs/concepts/gt4py-next-patterns.md`
 * a **loop-carried dependency** (already computed for `FORT004`) is a
   vertical recurrence: it maps, but to a `scan_operator`, not a plain
   field operator — score 3;
-* **indirect indexing** (`a(idx(i))`) is either an unstructured
-  connectivity or unportable — score 1, because detecting *which* from
-  static analysis alone is unreliable;
+* **indirect indexing** (`a(e2c(e))`) is an **unstructured connectivity**
+  access — the mature, high-value gt4py.next model (icon4py, Pace), where a
+  cell's neighbours come from a connectivity table and the reduction is a
+  `neighbor_sum` over a `FieldOffset`. It maps to a construct, so it scores
+  3, the same tier as `where` and `scan_operator` — not a penalty. (The
+  older Cartesian horizontal-grid model — `Ioff`/`Joff` shifts — is more
+  procedural and less clearly worth it; the vertical `Koff` shift below is
+  universal and stays first-class, since every mesh has a column.);
 * a **data-dependent branch** (`IF … THEN`) maps to `where()`, which is a
   construct beyond a point-wise operator — score 3;
 * everything else — point-wise, or a constant-offset stencil — is a clean
@@ -39,6 +44,10 @@ _COMMENT_RE = re.compile(r"!.*$", re.MULTILINE)
 # the boundary between a Cartesian stencil (portable) and unstructured or
 # unportable indexing.
 _INDIRECT_RE = re.compile(r"\b[A-Za-z_]\w*\s*\(\s*[A-Za-z_]\w*\s*\(")
+# ICON-style connectivity names: X2Y (edge-to-cell e2c, cell-to-edge c2e, …),
+# a strong signal that an indirection is a mesh connectivity, not an
+# arbitrary permutation.
+_MESH_CONN_RE = re.compile(r"\b[a-z]2[a-z]\b", re.IGNORECASE)
 
 # A data-dependent branch. `IF (...) THEN` (block) or a one-line
 # `IF (...) x = ...`. Either becomes a `where()`.
@@ -82,12 +91,16 @@ def score_routine(kernel: dict, source: str = "") -> Gt4PyVerdict:
 
     stripped = _COMMENT_RE.sub("", source) if source else ""
 
-    # Indirect indexing is the hardest signal: connectivity or unportable.
+    # Indirect indexing is an unstructured connectivity access — the mature,
+    # high-value gt4py.next model (icon4py / Pace). It maps to a construct
+    # (neighbor_sum over a FieldOffset on a LOCAL dimension), so it is a
+    # first-class target at the same tier as where/scan, not a penalty.
     if stripped and _INDIRECT_RE.search(stripped):
+        mesh = " (mesh connectivity, e.g. `e2c`)" if _MESH_CONN_RE.search(stripped) else ""
         return Gt4PyVerdict(
-            1, "unstructured / hard",
-            "indirect indexing `a(idx(i))` — an unstructured connectivity "
-            "(neighbor_sum over a FieldOffset) or unportable; needs review",
+            3, "unstructured connectivity",
+            f"connectivity access{mesh} → `neighbor_sum(a(OFF), axis=LocalDim)` "
+            "over an `as_connectivity` table — the unstructured model",
         )
 
     # A vertical recurrence maps to scan_operator, not a plain operator.

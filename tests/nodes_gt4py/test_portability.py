@@ -47,11 +47,15 @@ class TestRubric:
         assert v.score == 3
         assert "scan_operator" in v.reason
 
-    def test_indirect_indexing_is_hard(self):
+    def test_connectivity_access_is_first_class(self):
+        """The unstructured mesh model (icon4py / Pace) is the mature,
+        high-value target — a construct (neighbor_sum over a connectivity),
+        not a penalty. `e2c` is a mesh connectivity name."""
         v = score_routine(kernel(intent_map={"a": "IN", "f": "OUT"}),
                           "f(e) = cellval(e2c(e, c))")
-        assert v.score == 1
-        assert "unstructured" in v.label
+        assert v.score == 3
+        assert "unstructured connectivity" in v.label
+        assert "mesh connectivity" in v.reason
 
     def test_data_dependent_branch_maps_to_where(self):
         v = score_routine(kernel(intent_map={"q": "IN", "r": "OUT"}),
@@ -82,12 +86,13 @@ class TestPurityFloorConsistency:
         k = kernel(intent_map={"a": "IN"})  # no OUT/INOUT
         assert score_routine(k, "globalstate = a").score == 0
 
-    def test_indirection_caps_below_a_clean_stencil(self):
-        """Even a pure routine drops to 1 on indirect indexing."""
+    def test_connectivity_maps_to_a_construct_not_a_penalty(self):
+        """A clean stencil is 5; a connectivity access is 3 (a construct),
+        not a near-unportable 1 — the unstructured model is first-class."""
         clean = score_routine(kernel(intent_map={"a": "IN", "b": "OUT"}), "b = a + 1.0")
-        indirect = score_routine(kernel(intent_map={"a": "IN", "b": "OUT"}),
-                                 "b = a(map(i))")
-        assert clean.score == 5 and indirect.score == 1
+        connectivity = score_routine(kernel(intent_map={"a": "IN", "b": "OUT"}),
+                                     "b = a(c2e(i))")
+        assert clean.score == 5 and connectivity.score == 3
 
 
 class TestSourceOptional:

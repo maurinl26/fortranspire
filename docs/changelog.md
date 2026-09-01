@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — GT4Py: unstructured mesh is the primary model, not Cartesian
+
+- **`FORT032` no longer penalises an unstructured connectivity access.**
+  `a(e2c(e))` is the mature, high-value gt4py.next model (icon4py, Pace),
+  so it now scores **3 — a first-class construct** (`neighbor_sum` over a
+  connectivity), the same tier as `where` / `scan_operator`, instead of 1
+  ("unstructured / hard"). ICON-style `X2Y` connectivity names are
+  recognised. The Cartesian horizontal grid (`Ioff`/`Joff`) is the older,
+  more procedural path and is now framed as legacy; the vertical `Koff` /
+  `scan_operator` stays first-class (every mesh has a column).
+- The GT4Py spec and cheat-sheet are reordered to lead with the
+  unstructured model and mark the Cartesian horizontal grid as the legacy
+  alternative. The unstructured connectivity driver is now the priority
+  follow-up in #82 (the Cartesian driver from the domain/halo work stays
+  valid for the vertical axis).
+
+
 ### Added — GT4Py domain & halo (issue #82)
 
 - **Deterministic driver generation.** From the typed domain model, the
