@@ -327,6 +327,129 @@ def explain_port_cost(path: str) -> str:
     return f"explain rc={rc}\n{text}"
 
 
+# ── Inline-source tools (hosted / Le Chat) ─────────────────────────────────
+# The path-taking tools above assume the client and server share a
+# filesystem, which is true for a local stdio IDE and false for a hosted
+# SSE endpoint: a Le Chat user's Fortran file is on their machine, not on
+# ours. These variants take the source text itself, so the hosted
+# connector is actually useful rather than merely reachable. They are the
+# only tools that should face a public directory — deterministic, no LLM,
+# no token, and nothing written outside a temp file that is deleted before
+# returning.
+
+import contextlib as _contextlib
+import tempfile as _tempfile
+
+
+@_contextlib.contextmanager
+def _source_as_file(source: str, filename: str | None):
+    """Materialise inline source as a temp file under the workspace.
+
+    The deterministic analysers take a path; the jail requires it to sit
+    under the workspace root. So the source is written to a private temp
+    directory inside the workspace, handed to the existing code path, and
+    removed on exit — no second implementation, and nothing persists.
+
+    ``filename`` only shapes the suffix, so the frontend picks fixed vs
+    free form and the preprocessor triggers on an uppercase suffix. Any
+    directory component is stripped: a hosted caller must not steer where
+    the file lands.
+    """
+    from pathlib import Path as _Path
+
+    suffix = ".f90"
+    if filename:
+        stem_suffix = _Path(filename).suffix
+        if stem_suffix:
+            suffix = stem_suffix
+
+    root = _Path(config.workspace_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    tmp_dir = _tempfile.mkdtemp(prefix="lechat-", dir=str(root))
+    tmp_file = _Path(tmp_dir) / f"kernel{suffix}"
+    try:
+        tmp_file.write_text(source, encoding="utf-8")
+        yield tmp_file
+    finally:
+        import shutil as _shutil
+
+        _shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+def _reject_oversize(source: str) -> str | None:
+    """Guard against a caller pasting a whole codebase into one request."""
+    limit = int(os.getenv("FORTRANSPIRE_MAX_SOURCE_BYTES", "1000000"))
+    size = len(source.encode("utf-8"))
+    if size > limit:
+        return (
+            f"source is {size} bytes, over the {limit}-byte limit for an "
+            "inline request. Split it or run the server locally over stdio."
+        )
+    return None
+
+
+@mcp.tool()
+def analyze_source(source: str, filename: str | None = None) -> str:
+    """Static Loki analysis of Fortran source passed inline. No LLM, no token.
+
+    Use this when the Fortran is not a file on the server — e.g. from Le
+    Chat or any hosted client. Reports GPU-portability findings the same
+    way ``analyze_kernels`` does for a path.
+
+    Args:
+        source: The Fortran source text.
+        filename: Optional name, used only to pick the dialect from the
+            suffix (``.f`` fixed form, ``.F90`` triggers preprocessing).
+    """
+    from fortranspire.agent.analyze import main as analyze_main
+
+    too_big = _reject_oversize(source)
+    if too_big:
+        return f"analyze rc=2\n{too_big}"
+    with _source_as_file(source, filename) as f:
+        rc, text = _capture_main(analyze_main, ["--no-toolchain-check", str(f)])
+    return f"analyze rc={rc}\n{text}"
+
+
+@mcp.tool()
+def explain_source(source: str, filename: str | None = None) -> str:
+    """Pre-flight cost + risk estimate for inline Fortran source. No LLM.
+
+    The hosted counterpart of ``explain_port_cost``: same port-cost report,
+    for source that is not a file on the server.
+
+    Args:
+        source: The Fortran source text.
+        filename: Optional name, used only to pick the dialect.
+    """
+    from fortranspire.agent.explain import main as explain_main
+
+    too_big = _reject_oversize(source)
+    if too_big:
+        return f"explain rc=2\n{too_big}"
+    with _source_as_file(source, filename) as f:
+        rc, text = _capture_main(explain_main, [str(f)])
+    return f"explain rc={rc}\n{text}"
+
+
+@mcp.tool()
+def build_call_graph_source(source: str, filename: str | None = None) -> str:
+    """Mermaid call-graph for inline Fortran source. No LLM.
+
+    Args:
+        source: The Fortran source text.
+        filename: Optional name, used only to pick the dialect.
+    """
+    from fortranspire.agent.call_graph import main as graph_main
+
+    too_big = _reject_oversize(source)
+    if too_big:
+        return f"graph rc=2\n{too_big}"
+    with _source_as_file(source, filename) as f:
+        rc, text = _capture_main(graph_main, [str(f)])
+    return f"graph rc={rc}\n{text}"
+
+
 @mcp.tool()
 def build_call_graph(path: str, out: str | None = None) -> str:
     """Mermaid call-graph for a Fortran module or directory.
@@ -417,6 +540,10 @@ _TOOL_NAMES: tuple[str, ...] = (
     "explain_port_cost",
     "build_call_graph",
     "generate_docs",
+    # Inline-source variants for hosted / Le Chat use (no shared filesystem).
+    "analyze_source",
+    "explain_source",
+    "build_call_graph_source",
 )
 
 

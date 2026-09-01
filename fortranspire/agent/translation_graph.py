@@ -2,6 +2,18 @@
 Graph d'agents LangGraph pour la traduction de Fortran 90 vers JAX.
 Ordre : parser → explainer → translator → halo_exchange → reproducibility
         → performance → docstring → autodiff → surrogate → END
+
+
+.. deprecated:: 0.2.2
+   Superseded for the Fortran → JAX path by
+   :mod:`fortranspire.agent.translation_graph_phase2` (issue #73), which
+   adds the functional-refactoring step this graph never had and replaces
+   a validation that stopped at ``make_jaxpr`` — proving the code traces,
+   not that its gradients are right.
+
+   Kept importable because it also carries the Phase 3-5 experiments
+   (halo exchange, reproducibility, surrogate models) that have no home
+   yet. ``fortranspire translate`` no longer routes through it.
 """
 
 import sys

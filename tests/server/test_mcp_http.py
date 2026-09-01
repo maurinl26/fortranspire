@@ -103,7 +103,9 @@ def test_health_is_public_and_describes_the_instance(authed_server):
     payload = json.loads(body)
     assert payload["status"] == "ok"
     assert payload["service"] == "fortranspire"
-    assert payload["tools"] == 9
+    from fortranspire.server import _TOOL_NAMES
+
+    assert payload["tools"] == len(_TOOL_NAMES)
 
 
 @pytest.mark.slow
@@ -238,6 +240,12 @@ def test_every_path_taking_tool_uses_the_same_argument_name():
         schema = tool.parameters or {}
         props = schema.get("properties", {})
         if tool.name in {"ask_agent", "agent_status"}:
+            continue
+        if tool.name.endswith("_source"):
+            # Hosted variants take inline `source`, not a server path —
+            # that is the whole reason they exist (issue #51).
+            assert "source" in props, f"{tool.name} should take `source`: {list(props)}"
+            assert "path" not in props
             continue
         assert "path" in props, f"{tool.name} does not take `path`: {list(props)}"
         assert "filepath" not in props, f"{tool.name} still exposes the legacy `filepath`"

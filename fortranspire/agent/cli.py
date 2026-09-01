@@ -18,28 +18,60 @@ def _read_file(filepath: str) -> str:
         sys.exit(1)
 
 
-def translate_file(filepath: str):
-    """Phase 2 — pipeline JAX (legacy)."""
-    from fortranspire.agent.translation_graph import translation_app
-    print(f"\n🔬 JAX Translation Pipeline")
-    print(f"   Input : {filepath}")
-    print(f"   Model : Mistral-Large (endpoint souverain)\n")
+def translate_file(filepath: str, *, smoothing: str = "none") -> int:
+    """Phase 2 — Fortran → functional refactoring → JAX (issue #73).
+
+    Runs ``translation_app_phase2``: the graph that derives the functional
+    interface from the INTENT map before emitting, and verifies the
+    gradients afterwards.
+
+    Returns a non-zero code when the gradient check fails. That check is
+    deliberately blocking: differentiability is the whole reason to target
+    JAX, and a kernel that traces with a wrong gradient is silently wrong
+    exactly where the caller relies on it.
+
+    The previous graph (``translation_graph.translation_app``) is still
+    importable. It carries the Phase 3-5 experiments — halo exchange,
+    surrogate models — which this pipeline does not run.
+    """
+    from fortranspire.agent.translation_graph_phase2 import translation_app_phase2
+
+    print("\n🔬 Phase 2 — Fortran → functional → JAX")
+    print(f"   Input     : {filepath}")
+    print(f"   Smoothing : {smoothing}")
+    if smoothing == "smooth":
+        print("   Relaxations change the forward values — this is a modelling choice.")
     code = _read_file(filepath)
     initial_state = {
         "fortran_filepath": filepath,
         "fortran_code": code,
         "ast_info": {},
-        "isolated_kernel": "",
-        "jax_code": "",
-        "compilation_error": "",
-        "test_results": {},
-        "performance_metrics": {},
+        "kernel_results": [],
+        "is_program": False,
+        "smoothing": smoothing,
+        "executed_agents": [],
     }
-    final_state = translation_app.invoke(initial_state)
+    final_state = translation_app_phase2.invoke(initial_state)
+
     output_path = filepath.replace(".f90", "_jax.py").replace(".F90", "_jax.py")
     with open(output_path, "w") as f:
-        f.write(final_state.get("jax_code", ""))
-    print(f"\n✅ Translation complete → {output_path}")
+        f.write(final_state.get("jax_module", ""))
+    print(f"\n   Written → {output_path}")
+
+    blocked = [k for k in final_state.get("kernel_results", [])
+               if k.get("purity") == "blocked"]
+    if blocked:
+        print(f"   {len(blocked)} routine(s) could not become pure functions:")
+        for kernel in blocked:
+            print(f"     - {kernel['routine_name']}: {kernel.get('purity_reason', '')}")
+
+    if not final_state.get("gradcheck_passed", False):
+        print("\n❌ Gradient check failed — the emitted kernels are not usable.")
+        print(final_state.get("gradcheck_log", ""))
+        return 1
+
+    print("\n✅ Translation complete, gradients verified.")
+    return 0
 
 
 def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
@@ -187,8 +219,21 @@ def _translate_main():
         ),
     )
     parser.add_argument("filepath", help="Path to the .f90 Fortran file")
+    parser.add_argument(
+        "--smoothing", choices=("none", "guarded", "smooth"), default="none",
+        help=(
+            "How far to go for gradients. 'none' (default): faithful translation; "
+            "gradients may be zero or one-sided where the Fortran was non-smooth. "
+            "'guarded': NaN and infinite-derivative guards only — forward values "
+            "unchanged. 'smooth': also relax MAX/MIN/ABS/thresholds — this CHANGES "
+            "what the code computes and is a modelling decision, so applied "
+            "relaxations are named in the emitted code."
+        ),
+    )
     args = parser.parse_args()
-    translate_file(args.filepath)
+    # Propagate the gradient-check verdict: a failed check must fail the
+    # command, not just print a warning (issue #73).
+    return translate_file(args.filepath, smoothing=args.smoothing)
 
 
 def run_translate():

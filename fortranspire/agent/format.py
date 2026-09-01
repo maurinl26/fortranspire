@@ -14,6 +14,8 @@ the binary is absent so the analyze-only image is unaffected.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import argparse
 import shutil
 import subprocess
@@ -64,7 +66,9 @@ def format_paths(paths: list[str]) -> tuple[int, int]:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(sorted(p.rglob("*.[fF]90")))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(Path(f) for f in collect_fortran_files([p]))
         else:
             files.append(p)
 

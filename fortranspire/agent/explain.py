@@ -14,6 +14,8 @@ Zero LLM calls. Zero token cost. Suitable for sales / RFI / planning.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import argparse
 import contextlib
 import io
@@ -54,6 +56,13 @@ _RISK_LABELS: dict[str, str] = {
     "FORT007": "REAL/INTEGER without KIND",
     "FORT008": "Derived TYPE (AoS — consider SoA)",
     "FORT009": "Loki parse failure",
+    # Toolchain findings — absent from this map until the analyze/explain
+    # sync test caught it, so they rendered unlabelled in the port-cost
+    # report a client reads before paying.
+    "FORT010": "No Fortran compiler on PATH (cannot validate output)",
+    "FORT011": "!$acc present but no OpenACC-capable compiler available",
+    "FORT030": "JAX portability verdict (Phase 2)",
+    "FORT031": "Non-smooth construct (needs a guard or a relaxation)",
 }
 
 
@@ -231,7 +240,9 @@ def estimate_paths(paths: Iterable[str]) -> CodebaseEstimate:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(sorted(str(f) for f in p.rglob("*.[fF]90")))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         else:
             files.append(str(p))
     seen: set[str] = set()

@@ -6,6 +6,8 @@ pre-flight check before committing to a full GPU port.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import contextlib
 import io
 import json
@@ -66,6 +68,26 @@ RULES: dict[str, dict[str, str]] = {
         "severity": "warning",
         "summary": "COMMON block detected — incompatible with PURE/ELEMENTAL",
         "help": "Replace COMMON with a MODULE of explicit arguments; the LLM extractor handles this.",
+    },
+    "FORT031": {
+        "name": "NonSmoothConstruct",
+        "severity": "note",
+        "summary": "Non-smooth construct — differentiable only after a guard or a relaxation",
+        "help": (
+            "See fortranspire.jax_smooth for the replacement and the limit it "
+            "converges to. A relaxation changes what the code computes, so it is "
+            "opt-in via `--smoothing smooth`, never applied silently."
+        ),
+    },
+    "FORT030": {
+        "name": "JaxPurity",
+        "severity": "note",
+        "summary": "JAX portability — can this routine become a pure function?",
+        "help": (
+            "Phase 2 needs a functional interface: every written argument becomes a "
+            "return value, and hidden state must be threaded explicitly. `blocked` "
+            "means the routine cannot be a JAX function as written."
+        ),
     },
     "FORT004": {
         "name": "LoopCarriedDep",
@@ -130,10 +152,25 @@ def _help_uri(rule_id: str) -> str:
 # enough for CI annotations; an exact AST mapping is a later optimisation.
 
 def _line_of(source: str, pattern: str, flags: int = re.IGNORECASE) -> int | None:
+    r"""Line number of the first match, counted from the matched *content*.
+
+    Callers write patterns like ``^\s*SUBROUTINE`` to allow indentation.
+    But ``\s`` includes newlines, so with ``re.MULTILINE`` that leading
+    quantifier happily starts the match on an earlier blank line and eats
+    it — reporting a line that is blank, one (or several) above the real
+    declaration. SARIF turns these numbers into GitHub annotations, so the
+    annotation lands on the wrong statement.
+
+    Fixing it here rather than in each pattern means the next caller
+    cannot reintroduce it: skip whatever leading whitespace the match
+    swallowed and count to the first real character.
+    """
     match = re.search(pattern, source, flags | re.MULTILINE)
     if not match:
         return None
-    return source.count("\n", 0, match.start()) + 1
+    matched = match.group(0)
+    offset = len(matched) - len(matched.lstrip())
+    return source.count("\n", 0, match.start() + offset) + 1
 
 
 def _line_of_routine(source: str, name: str) -> int | None:
@@ -141,6 +178,45 @@ def _line_of_routine(source: str, name: str) -> int | None:
 
 
 # ── Core ────────────────────────────────────────────────────────────────────
+
+# Comment tails would otherwise make `! use MAX here` a finding.
+_COMMENT_RE = re.compile(r"!.*$", re.MULTILINE)
+
+
+def _non_smooth_constructs(source: str) -> list[tuple[str, str, int | None]]:
+    """Find the non-smooth constructs present, from the shared catalogue.
+
+    Returns ``(key, note, line)`` per construct found, at most once each —
+    a kernel using MAX forty times needs one finding, not forty.
+    """
+    from fortranspire.jax_smooth import NON_SMOOTH
+
+    stripped = _COMMENT_RE.sub("", source)
+    found: list[tuple[str, str, int | None]] = []
+
+    for entry in NON_SMOOTH:
+        match = re.search(entry.pattern, stripped, re.IGNORECASE | re.MULTILINE)
+        if not match:
+            continue
+        line = stripped.count("\n", 0, match.start()) + 1
+        target = entry.replacement or "no direct replacement"
+        found.append((entry.key, f"{entry.why} — {target}", line))
+
+    return found
+
+
+def _jax_verdict(kernel: dict) -> tuple[str, str]:
+    """Ask the Phase 2 functionalize node whether this routine can be pure.
+
+    Imported here rather than restated: the definition of "pure" has to
+    match what the Phase 2 pipeline will actually do, or `explain` quotes
+    a port the pipeline then refuses.
+    """
+    from fortranspire.agent.nodes_jax.functionalize import _split_by_intent, _verdict
+
+    _, outputs, _ = _split_by_intent(kernel.get("intent_map") or {})
+    return _verdict(kernel, outputs)
+
 
 def analyze_file(path: str) -> FileReport:
     """Run parser_phase1 on a single .f90 file and return its findings."""
@@ -206,6 +282,14 @@ def analyze_file(path: str) -> FileReport:
             _make_finding("FORT003", abspath, f"COMMON block `/{name}/`", line=line)
         )
 
+    # ── Differentiability of the source (issue #73) ───────────────────
+    # File-level: a construct is a property of the source text, and the
+    # same MAX often spans several routines.
+    for key, note, line in _non_smooth_constructs(src):
+        report.findings.append(
+            _make_finding("FORT031", abspath, f"`{key.upper()}` — {note}", line=line)
+        )
+
     # ── Per-routine findings ──────────────────────────────────────────
     for kernel in kernels:
         routine = kernel.get("routine_name", "?")
@@ -227,6 +311,23 @@ def analyze_file(path: str) -> FileReport:
                               routine=routine, line=rline)
             )
 
+        # JAX portability (issue #73). Reuses the Phase 2 functionalize node
+        # rather than restating its rules: "can this be a pure function?"
+        # must have one answer, and `explain` has to give it before anyone
+        # is quoted for a Phase 2 port.
+        verdict, reason = _jax_verdict(kernel)
+        if verdict != "pure":
+            # Only the routines that need work are reported. A clean routine
+            # needs no annotation, and emitting one per routine would bury a
+            # real finding under a wall of "this is fine" in Code Scanning.
+            report.findings.append(
+                _make_finding(
+                    "FORT030", abspath,
+                    f"routine `{routine}` is `{verdict}` for a JAX port — {reason}",
+                    routine=routine, line=rline,
+                )
+            )
+
     return report
 
 
@@ -236,7 +337,9 @@ def analyze_paths(paths: Iterable[str]) -> list[FileReport]:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(str(f) for f in p.rglob("*.[fF]90"))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         else:
             files.append(str(p))
     return [analyze_file(f) for f in sorted(set(files))]

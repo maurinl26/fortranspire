@@ -1,0 +1,44 @@
+# TLS termination for the fortranspire MCP server (issue #51).
+#
+# Le Chat's connector directory reaches an MCP server only over a public
+# HTTPS SSE endpoint with a bearer token. Caddy fronts the container,
+# obtains and renews a Let's Encrypt certificate automatically, and
+# forwards to the server on the internal network. No certificate files to
+# manage; point an A record at the host and set FORTRANSPIRE_DOMAIN.
+#
+# The bearer check is the server's, not Caddy's: the MCP auth middleware
+# already fails closed and audits (fortranspire/security/auth.py), so
+# proxying here and authenticating there keeps one source of truth.
+
+{$FORTRANSPIRE_DOMAIN} {
+	encode zstd gzip
+
+	# /health is public by contract (the connector probes it) and must
+	# answer before any auth — the server allow-lists it too.
+	@health path /health
+	handle @health {
+		reverse_proxy fortranspire:8000
+	}
+
+	# Everything else — /sse and the JSON-RPC channel — carries the
+	# bearer token straight through; the server enforces it.
+	reverse_proxy fortranspire:8000 {
+		# SSE is a long-lived stream: never buffer it, never time it out.
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
+		}
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

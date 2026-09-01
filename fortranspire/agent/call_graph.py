@@ -15,6 +15,8 @@ graph as context — useful for new contributors on a legacy codebase.
 """
 from __future__ import annotations
 
+from fortranspire.agent.nodes._common import collect_fortran_files
+
 import argparse
 import contextlib
 import io
@@ -66,8 +68,13 @@ def _extract_one(path: str) -> FileGraph:
     try:
         from loki import Sourcefile, FindNodes
         from loki.ir.nodes import CallStatement
-    except ImportError:
-        return FileGraph(file=abspath, parse_error="loki not installed")
+    except Exception as exc:  # noqa: BLE001
+        # Not only ImportError: loki-ifs can raise AttributeError on a
+        # fragile first import under Python 3.12 (issue #71). `cli.main`
+        # warms loki to avoid it, but if it still fails, degrade to an
+        # empty graph with a clear note instead of an uncaught traceback —
+        # the same broad guard the parser node uses.
+        return FileGraph(file=abspath, parse_error=f"loki unavailable: {exc}")
 
     try:
         source = Sourcefile.from_file(abspath)
@@ -103,7 +110,9 @@ def extract_graphs(paths: Iterable[str]) -> list[FileGraph]:
     for raw in paths:
         p = Path(raw)
         if p.is_dir():
-            files.extend(sorted(str(f) for f in p.rglob("*.[fF]90")))
+            # Shared discovery: fixed-form suffixes too (.F, .f, .for),
+            # which are most of the legacy corpus.
+            files.extend(collect_fortran_files([p]))
         else:
             files.append(str(p))
     seen: set[str] = set()

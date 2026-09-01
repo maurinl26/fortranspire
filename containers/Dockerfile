@@ -4,9 +4,15 @@ FROM python:3.12-slim AS builder
 WORKDIR /build
 # Image runtime du serveur MCP = pipeline GPU + serveur MCP, sans JAX
 # (le portage JAX n'est pas un cas d'usage du serveur HTTP).
-COPY pyproject.toml .
+#
+# README.md is copied because pyproject.toml declares `readme = "README.md"`;
+# without it hatchling's metadata step fails ("Readme file does not exist").
+# The install is a regular (non-editable) one: `-e` gains nothing in an
+# image and its editable-metadata hook is fragile under hatchling in a
+# clean container.
+COPY pyproject.toml README.md ./
 COPY fortranspire/ ./fortranspire/
-RUN pip install --no-cache-dir --prefix=/install -e ".[mcp]"
+RUN pip install --no-cache-dir --prefix=/install ".[mcp]"
 
 # ── Runtime stage ─────────────────────────────────────────────────────────────
 FROM python:3.12-slim

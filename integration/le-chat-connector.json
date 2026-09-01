@@ -2,7 +2,7 @@
   "$schema_note": "Draft for the Le Chat connector directory (beta). Fields and required keys may evolve; align with the latest official schema before submission. Not yet submitted as of 2026-06-21.",
   "name": "fortranspire",
   "display_name": "Fortran → GPU / JAX (HPC porting agent)",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "vendor": {
     "name": "Loïc Maurin",
     "email": "maurin.loic.ac@gmail.com",
@@ -45,64 +45,70 @@
   },
   "tools": [
     {
-      "id": "translate_kernel_gpu",
-      "title": "Port a Fortran kernel to GPU + Cython",
-      "description": "Phase 1 — transforms a Fortran 90 file into a PURE/ELEMENTAL module annotated with OpenACC pragmas (!$acc parallel loop, !$acc data) and a Cython wrapper (iso_c_binding header + NumPy typed memoryviews). Validates the result with gfortran and nvfortran -acc.",
+      "id": "explain_source",
+      "title": "Estimate the GPU-port cost of a Fortran kernel",
+      "description": "Deterministic pre-flight estimate: routine count, structural risks (I/O, hidden state, loop-carried dependencies), GPU-portability and JAX-portability verdicts, and an approximate token cost for a full port. No LLM is called; no token is consumed.",
       "inputs": [
         {
-          "name": "path",
+          "name": "source",
           "type": "string",
           "required": true,
-          "description": "Absolute path to the .f90 file inside the MCP server's workspace."
+          "description": "The Fortran source text itself (not a server path — a hosted server has no access to the caller's files)."
+        },
+        {
+          "name": "filename",
+          "type": "string",
+          "required": false,
+          "description": "Optional name, used only to pick the dialect from the suffix (.f fixed form, .F90 triggers cpp preprocessing)."
         }
       ],
-      "estimated_latency_seconds": 120,
-      "side_effects": [
-        "writes output/fortran_gpu/",
-        "writes output/cython/"
-      ],
-      "llm_calls_per_invocation": 4
+      "estimated_latency_seconds": 3,
+      "side_effects": [],
+      "llm_calls_per_invocation": 0
     },
     {
-      "id": "translate_kernel",
-      "title": "Translate a Fortran kernel to JAX (experimental)",
-      "description": "Phase 2 — translates an isolated Fortran kernel into a JAX implementation that is JIT-compilable via XLA and differentiable through jax.grad / jax.vjp.",
+      "id": "analyze_source",
+      "title": "Analyze a Fortran kernel for GPU-portability findings",
+      "description": "Static Loki AST analysis of inline Fortran source. Emits FORT0xx findings — blocking I/O, SAVE state, non-smooth constructs, missing INTENT — the same way the CI analyzer does. Handles legacy fixed-form F77 and cpp-conditional .F sources. No LLM, no token.",
       "inputs": [
         {
-          "name": "path",
+          "name": "source",
           "type": "string",
           "required": true,
-          "description": "Absolute path to the .f90 file or directory inside the MCP server's workspace."
+          "description": "The Fortran source text itself (not a server path — a hosted server has no access to the caller's files)."
+        },
+        {
+          "name": "filename",
+          "type": "string",
+          "required": false,
+          "description": "Optional name, used only to pick the dialect from the suffix (.f fixed form, .F90 triggers cpp preprocessing)."
         }
       ],
-      "estimated_latency_seconds": 60
+      "estimated_latency_seconds": 3,
+      "side_effects": [],
+      "llm_calls_per_invocation": 0
     },
     {
-      "id": "profile_kernels",
-      "title": "Benchmark a Fortran kernel against its translation",
-      "description": "Compiles and times the original Fortran kernel and any existing GPU / JAX translation, returns a structured comparison.",
+      "id": "build_call_graph_source",
+      "title": "Render a Fortran kernel's call graph",
+      "description": "Produces a Mermaid call-graph of the routines in inline Fortran source. No LLM, no token.",
       "inputs": [
         {
-          "name": "path",
+          "name": "source",
           "type": "string",
           "required": true,
-          "description": "Absolute path to the .f90 file or directory inside the MCP server's workspace."
-        }
-      ],
-      "estimated_latency_seconds": 30
-    },
-    {
-      "id": "ask_agent",
-      "title": "Natural-language Q&A on a Fortran codebase",
-      "description": "Free-form questions about the structure, INTENT, COMMON blocks, or GPU-readiness of the codebase mounted in the MCP server's workspace.",
-      "inputs": [
+          "description": "The Fortran source text itself (not a server path — a hosted server has no access to the caller's files)."
+        },
         {
-          "name": "query",
+          "name": "filename",
           "type": "string",
-          "required": true
+          "required": false,
+          "description": "Optional name, used only to pick the dialect from the suffix (.f fixed form, .F90 triggers cpp preprocessing)."
         }
       ],
-      "estimated_latency_seconds": 15
+      "estimated_latency_seconds": 3,
+      "side_effects": [],
+      "llm_calls_per_invocation": 0
     }
   ],
   "privacy": {
@@ -130,5 +136,6 @@
     "Privacy notice published",
     "Demo video or screenshots of a sample kernel transformation",
     "Operator contact + on-call procedure documented"
-  ]
+  ],
+  "public_surface_note": "Only deterministic, zero-token, zero-write tools are exposed to the public directory. The token-spending pipeline tools (translate_kernel_gpu, translate_kernel, ask_agent) run the operator's LLM key and write files, so they are reachable only over a local stdio connection or an authenticated private deployment, never from the public connector."
 }

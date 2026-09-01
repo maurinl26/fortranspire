@@ -7,6 +7,178 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`fortranspire graph` crashed on a clean PyPI install under Python 3.12
+  (issue #71).** loki-ifs has a fragile first import — a re-entrant
+  `import logging` inside `loki/logging.py` surfaces as "partially
+  initialized module 'logging'", order-dependent enough that even an
+  import-trace hook hides it. `analyze` and `explain` already survived it
+  through their own fallback; `graph` imported loki unguarded and died with
+  a traceback, which the Action self-test caught. Two-part fix: `cli.main`
+  now warms loki once, eagerly, before dispatching a loki-using verb (in a
+  state verified to work), skipping the verbs that never touch it (`mcp`,
+  `github-app`); and `call_graph`'s guard now catches a broad `Exception`,
+  not only `ImportError`, so a still-broken loki degrades to an empty graph
+  with a clear note instead of crashing. Verified in a clean 3.12 venv.
+
+
+### Added — hosted Le Chat connector (issue #51, split into #76/#77)
+
+- **Inline-source MCP tools** — `analyze_source`, `explain_source`,
+  `build_call_graph_source` (`fortranspire/server.py`). The path-taking
+  tools assume the client and server share a filesystem, which a hosted
+  SSE endpoint does not: a Le Chat user's Fortran is on their machine.
+  These take the source text, materialise it in a jailed temp file under
+  the workspace, run the **same** deterministic code path, and delete it
+  before returning. `filename` only selects the dialect (`.f` fixed form,
+  `.F90` triggers cpp); a directory component in it is ignored, and an
+  oversized paste (>1 MB) is refused. Zero LLM, zero token, zero persisted
+  write.
+- **The Le Chat connector now exposes only the safe surface.**
+  `integration/le-chat-connector.json` previously listed
+  `translate_kernel_gpu`, `translate_kernel`, `profile_kernels` and
+  `ask_agent` — every one of which spends the operator's Mistral key or
+  writes files, which is unacceptable on a public directory endpoint.
+  Replaced by the three deterministic inline-source tools, with a
+  `public_surface_note` recording why the token-spending ones are absent.
+- **TLS deployment** at `deploy/le-chat/` — a Caddy reverse proxy
+  (automatic Let's Encrypt) fronting the MCP container, plus compose and
+  `.env.example`. A small EU VPS is enough; this does **not** depend on
+  the European Weather Cloud tenancy (#43). Documented in
+  `docs/integrations/le-chat.md`.
+- Tests: `tests/server/test_inline_source.py` (inline tools, fixed-form
+  and cpp handling, hosted-safety guards, and connector-surface guards
+  asserting no token-spending or file-writing tool is publicly exposed).
+
+
+### Fixed — found on the first real target (CMAQ, USEPA)
+
+Three defects, all surfaced by running the free deterministic path over
+`CCTM/src/gas/ros3/rbsolver.F` — 632 lines of 1990s fixed-form F77.
+
+- **Uppercase-suffix files were never preprocessed.** By Fortran
+  convention `.F` / `.F90` / `.FOR` mean "run cpp first". We did not, so
+  Loki read the `#ifdef` lines as Fortran and returned **zero routines**,
+  which surfaced as `FORT009` "failed to parse" rather than the missing
+  pass it was. 525 of CMAQ's Fortran files carry that suffix and 199 hold
+  live conditionals, so the gap blocked the whole target. New
+  `agent/nodes/_preprocess.py`, wired into the parser.
+  Removed lines are **blanked rather than deleted**: findings carry a line
+  number, the composite action turns it into a GitHub annotation, and
+  `cpp -P` would shift every line past the first `#ifdef`.
+- **Directory scanning ignored fixed-form suffixes.** Six call sites each
+  spelled their own `*.[fF]90` glob, so `.F`, `.f`, `.for` were invisible:
+  `fortranspire explain` on CMAQ's tree reported "no .f90 / .F90 file
+  found" for 525 files. Replaced by one `collect_fortran_files` helper in
+  `nodes/_common.py` covering 16 suffixes.
+- **Reported line numbers were too low.** `_line_of` takes patterns like
+  `^\s*SUBROUTINE`, and `\s` matches newlines, so with `re.MULTILINE` the
+  quantifier started the match on a preceding blank line. `RBSOLVER` was
+  reported at line 25, which is blank; it is at 26. Fixed centrally rather
+  than in each pattern, so the next caller cannot reintroduce it.
+
+Not a defect on our side, recorded for the target: 32 CMAQ `.F` files use
+`include SUBST_CONST`-style aliases that CMAQ's own `bldit_cctm.csh`
+resolves at build time. They need that build step before any tool can
+read them.
+
+
+### Added — Phase 2 rebuilt as functional refactoring → JAX (issue #73)
+
+- **New `functionalize` node** (`agent/nodes_jax/functionalize.py`), the
+  step Phase 2 never had. Deterministic, no LLM. It derives the functional
+  signature from the INTENT map — a subroutine mutates its arguments, a
+  JAX function cannot, so every `INTENT(OUT)`/`INTENT(INOUT)` argument
+  becomes a return value — and issues a purity verdict (`pure` /
+  `threaded` / `blocked`) from the `has_io` / `has_save` flags Loki
+  already computes. `PURE`/`ELEMENTAL` is Fortran's own word for
+  functional purity, so the gate was free and Phase 2 was not using it.
+  A routine that cannot be pure is reported, never silently ported.
+- **New `gradcheck` node**, blocking. The previous Phase 2 validation ran
+  syntax → bytecode → `exec` → `make_jaxpr`, which together prove the code
+  *traces* — not that its gradients are right, though differentiability is
+  the entire reason to target JAX. It now compares `jax.grad` against
+  central finite differences, in float64, probing a few random entries per
+  array. Catches the NaN-gradient from an unguarded `jnp.where` (the
+  classic translated-Fortran defect, where an `IF` guarded a `sqrt`),
+  silently detached gradients, and kernels that raise under `grad`.
+  It also checks `jit`, deliberately: outside `jit`, reverse-mode traces
+  with a tracer carrying a concrete primal, so a Python `if` on a traced
+  value resolves against it and the gradient looks correct — then the
+  kernel raises the first time anyone jits it.
+  **Documented limitation**, pinned by a test: finite differences see the
+  same function autodiff does, so a locally flat transformation (`floor`,
+  `round`, an integer cast) yields zero on both sides and passes. A pass
+  is not a proof of differentiability in general.
+- **New graph** `translation_graph_phase2.py`:
+  `init → parser → extractor → functionalize → jax_kernel → gradcheck`.
+  The first three nodes are the Phase 1 ones, reused rather than forked —
+  parsing is the same work, and the extractor's promotion of `COMMON` /
+  `SAVE` state to explicit arguments is the first half of
+  functionalisation whatever the target. Two LLM calls maximum.
+- **Externalised JAX prompts** at `prompts/jax_kernel/{en,fr}/v1.md`.
+  Phase 2's prompts were inline in a 1 601-line module, so they were
+  neither versioned nor translatable, unlike every other prompt family
+  (issue #3).
+- **`FORT030` — JAX portability verdict** surfaced by `analyze` and
+  `explain`, reusing the `functionalize` rules rather than restating them,
+  so a quote cannot promise a port the pipeline then refuses. Emitted only
+  for routines that are *not* pure: annotating the clean ones would bury
+  real findings in Code Scanning.
+
+### Added — differentiability by relaxation (issue #73, second lot)
+
+- **`fortranspire/jax_smooth.py`** — guards and smooth relaxations the
+  emitted kernels import instead of re-deriving. Three reasons it is a
+  library: the stable form is easy to get wrong (the textbook softmax
+  `log(exp(b*a) + exp(b*b))` overflows past `exp(709)` while `logaddexp`
+  does not, and a model writes the textbook one); the limit is worth
+  testing once rather than per generation; and a named import shows a
+  reviewer *where* the model was relaxed and with which parameter.
+- **The distinction the module is built around.** A **guard**
+  (`safe_sqrt`, `safe_divide`, `safe_log`) repairs a translation: forward
+  values unchanged wherever the original was defined, only the NaN or the
+  infinite derivative removed. A **relaxation** (`smooth_max`,
+  `smooth_abs`, `smooth_step`, `smooth_clamp`, `smooth_argmax`,
+  `interp_table`) changes what the code computes — `MAX` replaced by a
+  softmax no longer returns `max`. That is right for an adjoint and wrong
+  for a flux limiter that must stay TVD, so it is a modelling decision,
+  never a default. Each relaxation carries its convergence limit and its
+  bias in the docstring; both are pinned by tests rather than asserted.
+- **`--smoothing none|guarded|smooth`** on `fortranspire translate`,
+  defaulting to `none`. A translation that silently changes the model is
+  worse than one that is honestly non-differentiable. Under `smooth`,
+  every applied relaxation is named in the emitted code.
+- **`FORT031` — non-smooth construct**, detected by `analyze` and labelled
+  by `explain`, from the same catalogue the emission prompt embeds, so a
+  construct cannot be detected without a documented replacement or offered
+  to the model without being detectable. Comment tails are stripped first,
+  and each construct is reported once per file rather than once per use.
+  Two entries have no replacement on purpose: `FLOOR`/`NINT` are the class
+  finite differences provably cannot see — analytic and numerical both
+  read zero — so the static rule is the only way to catch them; and
+  `DO WHILE` becomes `lax.while_loop`, which is not reverse-mode
+  differentiable in JAX.
+
+### Changed
+
+- **`fortranspire translate` now routes through the Phase 2 graph** and
+  **returns a non-zero exit code when the gradient check fails**. A kernel
+  that traces with a wrong gradient is silently wrong exactly where the
+  caller relies on it, so the check gates the command.
+- `agent/translation_graph.py` is marked superseded for the JAX path. It
+  stays importable: it still carries the Phase 3-5 experiments (halo
+  exchange, reproducibility, surrogate models) that have no other home.
+
+### Fixed
+
+- **`FORT010` and `FORT011` rendered unlabelled in the port-cost report.**
+  `explain` keeps its risk-label map in sync with `analyze` by hand, and
+  the two toolchain rules were never added. Found by a new test asserting
+  the two stay in sync — the report is what a client reads before paying.
+
+
 ### Added — agent surfaces on GitHub
 
 - **GitHub App** (`fortranspire github-app`, issue #50). A Starlette
