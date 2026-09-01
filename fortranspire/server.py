@@ -450,6 +450,85 @@ def build_call_graph_source(source: str, filename: str | None = None) -> str:
     return f"graph rc={rc}\n{text}"
 
 
+# ── Domain agent (interactive) ─────────────────────────────────────────────
+# Geometry cannot be read from a kernel — it is a modelling choice — so the
+# domain agent is interactive: it lists the geometry catalogue for the LLM
+# to present, reads the stencil halo from inline Fortran, and proposes the
+# software decomposition once the user has chosen a geometry, resolution and
+# rank count. Deterministic, no LLM, no token — safe on the public surface.
+
+
+@mcp.tool()
+def domain_geometries() -> str:
+    """List the geometry catalogue — the vocabulary to ask the user in.
+
+    Present these to the user and ask which geometry and resolution their
+    run uses (this cannot be read from the Fortran). No LLM, no token.
+    """
+    from fortranspire.agent.geometry import catalogue_table
+
+    return (
+        "# Grid geometries\n\n" + catalogue_table() +
+        "\n\nAsk the user which geometry + resolution (e.g. O1280, "
+        "nside=1024, C768, R2B9) and how many MPI ranks, then call "
+        "`domain_decomposition`."
+    )
+
+
+@mcp.tool()
+def domain_decomposition(
+    resolution: str = "",
+    n_ranks: int = 0,
+    source: str = "",
+    levels: int = 137,
+    fields: int = 10,
+) -> str:
+    """Propose the grid-imposed software decomposition. No LLM, no token.
+
+    The interactive step: the geometry is the user's choice, the stencil
+    **halo** is read from `source` (inline Fortran) when given. When
+    `resolution` is missing or unknown, this returns the catalogue and asks
+    the user to choose — the nudge that drives the conversation.
+
+    Args:
+        resolution: Grid resolution, e.g. `O1280`, `nside=1024`, `C768`.
+        n_ranks: Desired MPI ranks (snapped to what the grid allows).
+        source: Optional inline Fortran — its stencil sets the halo.
+        levels: Vertical levels for the memory estimate.
+        fields: 3-D fields for the memory estimate.
+    """
+    from fortranspire.agent.geometry import (
+        catalogue_table,
+        identify,
+        propose_decomposition,
+    )
+
+    if not resolution or identify(resolution) is None:
+        which = f"`{resolution}` is not a known grid. " if resolution else ""
+        return (
+            f"{which}Ask the user which geometry + resolution to use:\n\n"
+            + catalogue_table()
+        )
+
+    halo = 0
+    halo_note = ""
+    if source:
+        from fortranspire.agent.domain_model import build_domain_model
+
+        halo = build_domain_model(source).max_halo
+        halo_note = f"Stencil halo {halo} read from the kernel.\n\n"
+
+    if n_ranks <= 0:
+        return (f"{halo_note}Geometry `{resolution}` recognised. Ask the user "
+                "how many MPI ranks the run targets, then call again with "
+                "`n_ranks`.")
+
+    decomp = propose_decomposition(
+        resolution, n_ranks=n_ranks, halo=halo, levels=levels, fields=fields
+    )
+    return halo_note + decomp.render()
+
+
 @mcp.tool()
 def build_call_graph(path: str, out: str | None = None) -> str:
     """Mermaid call-graph for a Fortran module or directory.
@@ -544,6 +623,9 @@ _TOOL_NAMES: tuple[str, ...] = (
     "analyze_source",
     "explain_source",
     "build_call_graph_source",
+    # Interactive domain agent — geometry catalogue + decomposition (#88).
+    "domain_geometries",
+    "domain_decomposition",
 )
 
 

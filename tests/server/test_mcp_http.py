@@ -239,7 +239,10 @@ def test_every_path_taking_tool_uses_the_same_argument_name():
     for tool in asyncio.run(mcp.list_tools()):
         schema = tool.parameters or {}
         props = schema.get("properties", {})
-        if tool.name in {"ask_agent", "agent_status"}:
+        if tool.name in {"ask_agent", "agent_status",
+                         "domain_geometries", "domain_decomposition"}:
+            # ask_agent/agent_status take a query/nothing; the domain tools
+            # take a resolution + inline source, not a server path.
             continue
         if tool.name.endswith("_source"):
             # Hosted variants take inline `source`, not a server path —
