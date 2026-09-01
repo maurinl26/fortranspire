@@ -18,6 +18,41 @@ def _read_file(filepath: str) -> str:
         sys.exit(1)
 
 
+def _sibling_output(filepath: str, tail: str) -> str:
+    """An output path beside the input, **never equal to it**.
+
+    The old ``filepath.replace(".f90", ...)`` silently returned the *input*
+    path for any other suffix (``.F``, ``.f``, ``.for``): the replace did not
+    match, so an empty or blocked result was written straight over the source
+    file — destroying it (observed on CMAQ ``rbfeval.F``). Deriving from the
+    stem makes the output distinct for every suffix, and the equality guard is
+    a last-resort safety net.
+    """
+    from pathlib import Path
+
+    p = Path(filepath)
+    out = p.with_name(p.stem + tail)
+    if out.resolve() == p.resolve():  # never overwrite the input
+        out = p.with_name(p.stem + "_out" + tail)
+    return str(out)
+
+
+def _write_output(output_path: str, content: str, kind: str) -> None:
+    """Write emitted code, but never replace an existing file with nothing.
+
+    A blocked run emits an empty module; writing that would clobber whatever
+    was at ``output_path``. Skip it and say so instead.
+    """
+    from pathlib import Path
+
+    if not content.strip():
+        print(f"\n   No {kind} emitted (nothing to write) — {output_path} left untouched.")
+        return
+    with open(output_path, "w") as f:
+        f.write(content)
+    print(f"\n   Written → {output_path}")
+
+
 def translate_file(filepath: str, *, smoothing: str = "none") -> int:
     """Phase 2 — Fortran → functional refactoring → JAX (issue #73).
 
@@ -53,10 +88,8 @@ def translate_file(filepath: str, *, smoothing: str = "none") -> int:
     }
     final_state = translation_app_phase2.invoke(initial_state)
 
-    output_path = filepath.replace(".f90", "_jax.py").replace(".F90", "_jax.py")
-    with open(output_path, "w") as f:
-        f.write(final_state.get("jax_module", ""))
-    print(f"\n   Written → {output_path}")
+    output_path = _sibling_output(filepath, "_jax.py")
+    _write_output(output_path, final_state.get("jax_module", ""), "JAX module")
 
     blocked = [k for k in final_state.get("kernel_results", [])
                if k.get("purity") == "blocked"]
@@ -100,10 +133,8 @@ def gt4py_file(filepath: str) -> int:
     }
     final_state = translation_app_gt4py.invoke(initial_state)
 
-    output_path = filepath.replace(".f90", "_gt4py.py").replace(".F90", "_gt4py.py")
-    with open(output_path, "w") as f:
-        f.write(final_state.get("gt4py_module", ""))
-    print(f"\n   Written → {output_path}")
+    output_path = _sibling_output(filepath, "_gt4py.py")
+    _write_output(output_path, final_state.get("gt4py_module", ""), "gt4py module")
 
     blocked = [k for k in final_state.get("kernel_results", [])
                if k.get("purity") == "blocked"]
