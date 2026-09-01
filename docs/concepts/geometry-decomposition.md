@@ -56,6 +56,24 @@ model](gt4py-next-patterns.md) computes it from the stencil offsets
 and the per-rank memory from it. The vertical axis stays structured; the
 mesh is horizontal-only.
 
+## The grid imposes the decomposition
+
+The dependency runs one way: **software-defined by the grid**. The rank
+count is not a free knob — the grid topology decides which decompositions
+exist, and a requested count is snapped to the nearest one the grid allows.
+
+- A **cubed sphere** has 6 faces tiled `p×p`, so ranks are `6·p²`. Ask for
+  1000 on C768 and the agent returns **1014** (`6 faces × 13×13`), telling
+  you it snapped.
+- **HEALPix nested** imposes the `12·4^d` hierarchy that keeps neighbours
+  local. Ask for 500 and it returns **768** (`12·4³`).
+- **Octahedral** (Atlas equal-regions) and **icosahedral** (METIS) are
+  flexible partitioners — they take (almost) any count — but it is still the
+  grid's partitioner that allows it, not a blind `total / ranks`.
+
+The per-rank points and memory are computed from the grid-allowed count, not
+the wish — so the estimate matches what would actually run.
+
 ## Why interactive
 
 Geometry is not in the Fortran. A kernel `t(k+1) - t(k-1)` has a halo of 1

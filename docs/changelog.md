@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — the grid imposes the decomposition (issue #88)
+
+- The decomposition proposer no longer divides points by an arbitrary rank
+  count. **The grid topology decides which decompositions exist**, and a
+  requested rank count is snapped to the nearest one the grid allows —
+  software-defined by the grid, the correct dependency direction. A cubed
+  sphere forces `6·p²` (C768 with 1000 requested → 1014 = 6 faces × 13×13);
+  HEALPix nested forces `12·4^d` (500 → 768); octahedral (Atlas
+  equal-regions) and icosahedral (METIS) are flexible partitioners. The
+  per-rank points and memory come from the grid-allowed count, and the
+  report says when it snapped.
+
+
 ### Added — interactive domain agent: geometry catalogue + decomposition (issue #88)
 
 - **`fortranspire domain`** and `fortranspire/agent/geometry.py` — a
