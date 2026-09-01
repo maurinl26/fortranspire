@@ -197,3 +197,22 @@ class TestSpectralAliases:
         """It must stay an alias, not become a geometry entry."""
         assert "spectral" not in GEOMETRIES
         assert not any("spectral" in g.key for g in GEOMETRIES.values())
+
+
+
+class TestNominalResolution:
+    """~km spacing from the point count, verified against operational grids."""
+
+    def test_formula_matches_known_grids(self):
+        from fortranspire.agent.geometry import nominal_km
+
+        assert nominal_km(6_599_680) == pytest.approx(8.8, abs=0.3)   # O1280 ~9km
+        assert nominal_km(12_582_912) == pytest.approx(6.4, abs=0.3)  # nside=1024
+        assert nominal_km(20_971_520) == pytest.approx(4.9, abs=0.3)  # R2B9 ~5km
+
+    def test_catalogue_and_report_show_resolution(self):
+        from fortranspire.agent.geometry import catalogue_table, propose_decomposition
+
+        assert "Resolution" in catalogue_table()
+        assert "km" in catalogue_table()
+        assert "km)" in propose_decomposition("O1280", n_ranks=1024, halo=1).render()

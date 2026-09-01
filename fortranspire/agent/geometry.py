@@ -73,6 +73,21 @@ class Geometry:
     notes: str = ""
 
 
+_EARTH_RADIUS_KM = 6371.0
+
+
+def nominal_km(points: int) -> float:
+    """Approximate horizontal grid spacing in km for a global grid.
+
+    From the area per point on the sphere: spacing ≈ 2·R·√(π/P). Verified
+    against the operational grids — O1280 → 8.8 km (~9 km), HEALPix
+    nside=1024 → 6.4 km, C768 → 12 km (~13 km), R2B9 → 4.9 km (~5 km).
+    """
+    if points <= 0:
+        return float("nan")
+    return 2.0 * _EARTH_RADIUS_KM * math.sqrt(math.pi / points)
+
+
 # ── Resolution parsers ─────────────────────────────────────────────────────
 
 def _parse_prefixed(prefix: str):
@@ -323,7 +338,7 @@ class Decomposition:
         lines = [
             f"# Decomposition — {self.geometry} {self.resolution}",
             "",
-            f"  horizontal points     {self.total_points:,}",
+            f"  horizontal points     {self.total_points:,}  (~{nominal_km(self.total_points):.0f} km)",
             f"  vertical levels       {self.levels}",
             rank_line,
             f"  partition             {self.partition_shape}",
@@ -422,9 +437,10 @@ def propose_decomposition(
 
 def catalogue_table() -> str:
     """Render the geometry catalogue as a reference table."""
-    rows = ["| Geometry | Naming | Points | Structure | Partitioning |",
-            "| -------- | ------ | ------ | --------- | ------------ |"]
+    rows = ["| Geometry | Naming | Points | ~Resolution | Structure | Partitioning |",
+            "| -------- | ------ | ------ | ----------- | --------- | ------------ |"]
     for g in GEOMETRIES.values():
-        rows.append(f"| {g.name} | `{g.example}` | {g.count(g.parse(g.example)):,} "
+        pts = g.count(g.parse(g.example))
+        rows.append(f"| {g.name} | `{g.example}` | {pts:,} | ~{nominal_km(pts):.0f} km "
                     f"| {g.structure} | {g.partitioning} |")
     return "\n".join(rows)
