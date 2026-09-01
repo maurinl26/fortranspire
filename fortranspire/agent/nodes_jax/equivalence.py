@@ -96,18 +96,28 @@ def check_equivalence(
     atol: float = _ATOL,
     rtol: float = _RTOL,
     seed: int = 0,
+    use_resolved: bool = False,
+    extra_fortran_args: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Compare the Fortran and JAX outputs on one shared set of inputs."""
+    """Compare the Fortran and JAX outputs on one shared set of inputs.
+
+    ``use_resolved`` builds a degenerate all-``extent`` fixture from #99
+    resolution (for a promoted module-state twin); ``extra_fortran_args`` carries
+    arguments the Fortran twin has but the JAX does not (the ``nfs`` extent).
+    """
     import numpy as np
 
-    from fortranspire.agent.nodes_jax.gradcheck import _enable_x64, _make_inputs
+    from fortranspire.agent.nodes_jax.gradcheck import (
+        _DEFAULT_EXTENT, _enable_x64, _make_inputs, _resolved_inputs,
+    )
 
     # Match the Fortran REAL(8): without x64 the JAX runs in float32 and the
     # comparison floor is ~1e-7, hiding real single-ulp double-precision errors.
     _enable_x64()
 
     intent = {k.lower(): (v or "").upper() for k, v in (kernel.get("intent_map") or {}).items()}
-    inputs = _make_inputs(kernel, seed=seed)
+    inputs = (_resolved_inputs(kernel, _DEFAULT_EXTENT, seed=seed)
+              if use_resolved else _make_inputs(kernel, seed=seed))
     outputs = list(kernel.get("outputs") or [])
 
     # Fortran call: pass every IN / INOUT argument by (lowercased) keyword.
@@ -117,6 +127,8 @@ def check_equivalence(
         low = arg.lower()
         if intent.get(low, "IN") in ("IN", "INOUT"):
             fort_kwargs[low] = _numpy(val)
+    for extra, val in (extra_fortran_args or {}).items():
+        fort_kwargs[extra.lower()] = val
     try:
         fort_out = fortran_fn(**fort_kwargs)
     except Exception as exc:  # noqa: BLE001
@@ -170,15 +182,29 @@ def equivalence_agent(state: Phase2State) -> dict:
             updated.append(kernel)
             continue
 
-        # A routine that reads module state cannot compile standalone here.
+        # A routine that reads module state gets a promoted, standalone Fortran
+        # twin whose signature matches the JAX (issue #99 whole-program build);
+        # a self-contained one is compiled as-is.
+        use_resolved = False
+        extra_fortran_args: Dict[str, Any] = {}
         if kernel.get("free_reads") or kernel.get("free_writes"):
-            print(f"  ⏭ {name:<28} skipped — reads module state (needs a "
-                  "whole-program build)")
-            updated.append({**kernel, "equivalence": {"status": "skipped",
-                            "reason": "module state; not compilable in isolation"}})
-            continue
+            from fortranspire.agent.nodes_jax.promote_fortran import (
+                generate_equivalence_fortran,
+            )
+            from fortranspire.agent.nodes_jax.gradcheck import _DEFAULT_EXTENT
 
-        fortran_fn, reason = compile_fortran(kernel["fortran_code"], name)
+            twin, dim_arg = generate_equivalence_fortran(kernel)
+            if twin is None:
+                print(f"  ⏭ {name:<28} skipped — {dim_arg}")
+                updated.append({**kernel, "equivalence": {"status": "skipped", "reason": dim_arg}})
+                continue
+            source = twin
+            use_resolved = True
+            extra_fortran_args = {dim_arg: _DEFAULT_EXTENT}
+        else:
+            source = kernel["fortran_code"]
+
+        fortran_fn, reason = compile_fortran(source, name)
         if fortran_fn is None:
             print(f"  ⏭ {name:<28} skipped — {reason}")
             updated.append({**kernel, "equivalence": {"status": "skipped", "reason": reason}})
@@ -193,7 +219,9 @@ def equivalence_agent(state: Phase2State) -> dict:
                             "reason": f"JAX load failed: {exc}"}})
             continue
 
-        report = check_equivalence(kernel, jax_fn, fortran_fn)
+        report = check_equivalence(kernel, jax_fn, fortran_fn,
+                                   use_resolved=use_resolved,
+                                   extra_fortran_args=extra_fortran_args)
         entry = {**kernel, "equivalence": report}
 
         if report["status"] == "pass":
