@@ -170,6 +170,21 @@ def parser_phase1(state: Phase1State) -> dict:
                     if hasattr(var, 'dimensions') and var.dimensions:
                         dimensions[var.name] = [str(d) for d in var.dimensions]
 
+            # Free-variable (use-def) analysis: module state the routine reads
+            # or writes but does not declare (issue #5). A JAX / gt4py function
+            # cannot see module globals, so these get promoted to explicit
+            # arguments downstream. Deterministic, from the AST.
+            try:
+                from fortranspire.agent.dataflow import free_symbols
+                fs = free_symbols(routine)
+                free_reads, free_writes = fs.reads, fs.writes
+            except Exception as _exc:  # noqa: BLE001 - analysis must never break parsing
+                free_reads, free_writes = [], []
+                print(f"  (free-symbol analysis skipped for {routine.name}: {_exc})")
+            if free_reads or free_writes:
+                print(f"  Free module state in {routine.name}: "
+                      f"+{len(free_reads)} read, +{len(free_writes)} written")
+
             kernel_results.append({
                 "routine_name":       routine.name,
                 "fortran_code":       routine.to_fortran(),
@@ -182,6 +197,8 @@ def parser_phase1(state: Phase1State) -> dict:
                 "has_save":           has_save,
                 "loops":              loop_descriptions,
                 "dimensions":         dimensions,
+                "free_reads":         free_reads,
+                "free_writes":        free_writes,
                 "status":             "pending",
                 "error_log":          "",
             })
