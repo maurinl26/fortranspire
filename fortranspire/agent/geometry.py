@@ -243,12 +243,48 @@ GEOMETRIES: dict[str, Geometry] = {
 }
 
 
+# ── Spectral-truncation aliases ────────────────────────────────────────────
+# TCo / TL / TQ are *spectral truncation* labels, not geometries — they show
+# the spectral resolution and resolve to a Gaussian grid, which is what
+# imposes the decomposition. So they are aliases, not a catalogue family.
+#
+# Verified against ECMWF: TCo1279 = O1280 (cubic octahedral, N = T+1). The
+# linear grid TL<T> pairs with a reduced Gaussian N=(T+1)/2 (TL1279 = N640);
+# the modern operational grid is octahedral, so the octahedral-equivalent is
+# used for the estimate, flagged.
+_SPECTRAL_RE = re.compile(r"^T(Co|L|Q)\s*(\d+)$", re.IGNORECASE)
+
+
+def resolve_spectral(name: str) -> Optional[tuple[str, str]]:
+    """A spectral truncation name → (grid resolution string, note).
+
+    ``TCo1279`` → ``("O1280", "cubic octahedral, N=T+1")``. Returns None
+    when the name is not a spectral truncation label.
+    """
+    m = _SPECTRAL_RE.match(name.strip())
+    if not m:
+        return None
+    kind, t = m.group(1).lower(), int(m.group(2))
+    if kind == "co":                         # cubic octahedral
+        return f"O{t + 1}", f"spectral TCo{t} → octahedral O{t + 1} (cubic, N=T+1)"
+    if kind == "l":                          # linear
+        n = (t + 1) // 2
+        return f"O{n}", (f"spectral TL{t} → linear grid ≈ reduced Gaussian N{n}; "
+                         f"octahedral-equivalent O{n} used for the estimate")
+    # quadratic — between the two; flagged as approximate.
+    n = (3 * (t + 1)) // 4
+    return f"O{n}", f"spectral TQ{t} → quadratic grid ≈ O{n} (approximate)"
+
+
 def identify(name: str) -> Optional[tuple[Geometry, float]]:
     """Match a resolution string to a geometry and its parameter.
 
     ``"O1280"`` → (octahedral, 1280). ``"nside=1024"`` → (healpix, 1024).
     Returns None when nothing in the catalogue recognises it.
     """
+    spectral = resolve_spectral(name)
+    if spectral is not None:
+        name = spectral[0]   # resolve to the underlying grid
     for geom in GEOMETRIES.values():
         param = geom.parse(name)
         if param is not None:
@@ -327,6 +363,7 @@ def propose_decomposition(
     ``levels`` and ``fields`` size the memory estimate. Returns None when the
     resolution is not in the catalogue.
     """
+    spectral = resolve_spectral(resolution)
     hit = identify(resolution)
     if hit is None:
         return None
@@ -359,6 +396,8 @@ def propose_decomposition(
     if geom.key == "healpix" and halo:
         notes.append("nested ordering keeps neighbours local — good for the halo")
 
+    if spectral is not None:
+        notes.append(spectral[1])
     if not partition.exact:
         notes.append(partition.note)
 
