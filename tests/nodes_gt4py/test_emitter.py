@@ -17,10 +17,13 @@ import pytest
 # ── Emission node ──────────────────────────────────────────────────────────
 
 class TestEmissionNode:
-    def test_blocked_routine_is_not_emitted(self):
+    def test_blocked_routine_is_not_emitted(self, monkeypatch):
         from fortranspire.agent.nodes_gt4py.gt4py_kernel import gt4py_kernel_agent
 
-        # A blocked routine must be skipped before any LLM call.
+        # A run whose routines are all blocked emits nothing and must not
+        # require an API key — the LLM is built lazily, only when there is
+        # something to emit. CI has no MISTRAL_API_KEY, so this pins it.
+        monkeypatch.delenv("MISTRAL_API_KEY", raising=False)
         state = {
             "kernel_results": [{"routine_name": "k", "purity": "blocked",
                                 "fortran_code": "x", "intent_map": {}}],

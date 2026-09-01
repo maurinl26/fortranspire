@@ -88,7 +88,9 @@ def jax_kernel_agent(state: Phase2State) -> dict:
     # Reasoning stage: choosing `scan` over a vectorised expression, or
     # guarding an unsafe branch, is a semantic decision — a wrong call is
     # silently wrong, which is exactly what the cheaper model gets wrong.
-    llm = get_llm("reasoning")
+    # Built lazily: a run whose routines are all blocked emits nothing and
+    # must not require an API key.
+    llm = None
 
     updated: List[JaxKernelInfo] = []
     emitted = 0
@@ -100,6 +102,9 @@ def jax_kernel_agent(state: Phase2State) -> dict:
             print(f"  ⏭ {name:<28} blocked by functionalize — not sent to the LLM")
             updated.append({**kernel, "status": "skipped"})
             continue
+
+        if llm is None:
+            llm = get_llm("reasoning")
 
         system = SystemMessage(
             content=load_prompt(

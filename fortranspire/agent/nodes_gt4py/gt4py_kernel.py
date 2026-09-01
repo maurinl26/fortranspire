@@ -59,7 +59,11 @@ def gt4py_kernel_agent(state) -> dict:
     print("  [GT4Py kernel] emitting field operators against the derived signature")
     print(SEP)
 
-    llm = get_llm("reasoning")
+    # The LLM is built lazily, on the first routine that actually needs
+    # emitting. A run whose routines are all blocked (I/O, hidden state)
+    # emits nothing and must not require an API key — and the CI exercises
+    # exactly that path.
+    llm = None
     updated: List[dict] = []
     emitted = 0
 
@@ -70,6 +74,9 @@ def gt4py_kernel_agent(state) -> dict:
             print(f"  ⏭ {name:<28} blocked by functionalize — not a field operator")
             updated.append({**kernel, "status": "skipped"})
             continue
+
+        if llm is None:
+            llm = get_llm("reasoning")
 
         system = SystemMessage(
             content=load_prompt(
