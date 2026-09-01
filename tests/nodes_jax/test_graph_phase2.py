@@ -44,7 +44,8 @@ def test_pipeline_order(graph):
         ("init", "parser"),
         ("parser", "extractor"),
         ("extractor", "functionalize"),
-        ("functionalize", "jax_kernel"),
+        ("functionalize", "domain_model"),   # typed model before emission
+        ("domain_model", "jax_kernel"),
         ("jax_kernel", "gradcheck"),
         ("gradcheck", "__end__"),
     }

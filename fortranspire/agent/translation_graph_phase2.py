@@ -43,6 +43,7 @@ from fortranspire.agent.nodes import (
     init_phase1,
     parser_phase1,
 )
+from fortranspire.agent.domain_model import domain_model_agent
 from fortranspire.agent.nodes_jax import (
     functionalize_agent,
     gradcheck_agent,
@@ -56,6 +57,7 @@ workflow_phase2.add_node("init",           init_phase1)
 workflow_phase2.add_node("parser",         parser_phase1)
 workflow_phase2.add_node("extractor",      extractor_agent)
 workflow_phase2.add_node("functionalize",  functionalize_agent)
+workflow_phase2.add_node("domain_model",   domain_model_agent)
 workflow_phase2.add_node("jax_kernel",     jax_kernel_agent)
 workflow_phase2.add_node("gradcheck",      gradcheck_agent)
 
@@ -63,7 +65,8 @@ workflow_phase2.set_entry_point("init")
 workflow_phase2.add_edge("init",          "parser")
 workflow_phase2.add_edge("parser",        "extractor")
 workflow_phase2.add_edge("extractor",     "functionalize")
-workflow_phase2.add_edge("functionalize", "jax_kernel")
+workflow_phase2.add_edge("functionalize", "domain_model")
+workflow_phase2.add_edge("domain_model",  "jax_kernel")
 workflow_phase2.add_edge("jax_kernel",    "gradcheck")
 workflow_phase2.add_edge("gradcheck",     END)
 

@@ -60,7 +60,17 @@ _INSTRUCTIONS = {
 
 
 def _render_hints(kernel: JaxKernelInfo) -> str:
-    hints = kernel.get("hints") or []
+    """functionalize hints, prefixed with the deterministic typed shapes."""
+    hints = list(kernel.get("hints") or [])
+
+    # The typed domain model (shapes, dtypes) is derived deterministically
+    # from Loki — the emitter follows it rather than inferring types anew.
+    model = kernel.get("domain_model")
+    if model is not None:
+        from fortranspire.agent.domain_model import to_jax_hints
+
+        hints = to_jax_hints(model) + hints
+
     if not hints:
         return "- Nothing unusual: independent loops, explicit INTENT, no hidden state."
     return "\n".join(f"- {h}" for h in hints)

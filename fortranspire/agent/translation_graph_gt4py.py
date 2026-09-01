@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, StateGraph
 
+from fortranspire.agent.domain_model import domain_model_agent
 from fortranspire.agent.nodes import extractor_agent, init_phase1, parser_phase1
 from fortranspire.agent.nodes_gt4py import type_check_agent, gt4py_kernel_agent
 from fortranspire.agent.nodes_gt4py._state import Phase_GT4Py_State
@@ -25,6 +26,7 @@ workflow_gt4py.add_node("init",            init_phase1)
 workflow_gt4py.add_node("parser",          parser_phase1)
 workflow_gt4py.add_node("extractor",       extractor_agent)
 workflow_gt4py.add_node("functionalize",   functionalize_agent)
+workflow_gt4py.add_node("domain_model",    domain_model_agent)
 workflow_gt4py.add_node("gt4py_kernel",    gt4py_kernel_agent)
 workflow_gt4py.add_node("type_check", type_check_agent)
 
@@ -32,7 +34,8 @@ workflow_gt4py.set_entry_point("init")
 workflow_gt4py.add_edge("init",            "parser")
 workflow_gt4py.add_edge("parser",          "extractor")
 workflow_gt4py.add_edge("extractor",       "functionalize")
-workflow_gt4py.add_edge("functionalize",   "gt4py_kernel")
+workflow_gt4py.add_edge("functionalize",   "domain_model")
+workflow_gt4py.add_edge("domain_model",    "gt4py_kernel")
 workflow_gt4py.add_edge("gt4py_kernel",    "type_check")
 workflow_gt4py.add_edge("type_check", END)
 

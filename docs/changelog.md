@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — typed domain model, shared by both functional targets
+
+- **`fortranspire/agent/domain_model.py`** — scans a Fortran routine and
+  builds a typed, target-agnostic model: per field, the Python dtype (from
+  `KIND`), the rank and axis extents, the axis *role* (vertical / horizontal,
+  inferred by heuristic and flagged), and the stencil **offsets** with the
+  **halo** they imply. Deterministic, Loki-based, no LLM.
+- It feeds **both** functional emitters. A new `domain_model` node runs
+  after `functionalize` in the JAX (Phase 2) and GT4Py graphs, and each
+  emitter now prefixes its prompt with the typed facts —
+  `Field[Dims[K], float64]` + `FieldOffset` + halo for gt4py.next, shapes +
+  dtypes for JAX — instead of letting the model re-infer types from the
+  source. It is also the input the GT4Py driver / halo work (#82) needs:
+  the offsets give the halo thickness per axis.
+- Axis roles are heuristic (Fortran gives dimensions positionally), so a
+  wrong role is a naming choice, not a correctness bug, and every inferred
+  role is flagged for a human to confirm.
+
+
 ### Changed
 
 - **Renamed the GT4Py validation node `domain_validate` → `type_check`.**
