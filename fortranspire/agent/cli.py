@@ -74,6 +74,58 @@ def translate_file(filepath: str, *, smoothing: str = "none") -> int:
     return 0
 
 
+def gt4py_file(filepath: str) -> int:
+    """GT4Py — Fortran → gt4py.next field operators (issue #42).
+
+    Runs the GT4Py graph: the Phase 2 functional analysis (shared
+    `functionalize` node) followed by field-operator emission and a
+    type-check against gt4py.next's own frontend.
+
+    Returns non-zero when an emitted operator fails the type-check.
+    A skip (gt4py not installed) is reported but does not fail — the
+    operators are still written; they are just not type-checked.
+    """
+    from fortranspire.agent.translation_graph_gt4py import translation_app_gt4py
+
+    print("\n🌐 GT4Py — Fortran → gt4py.next field operators")
+    print(f"   Input : {filepath}")
+    code = _read_file(filepath)
+    initial_state = {
+        "fortran_filepath": filepath,
+        "fortran_code": code,
+        "ast_info": {},
+        "kernel_results": [],
+        "is_program": False,
+        "executed_agents": [],
+    }
+    final_state = translation_app_gt4py.invoke(initial_state)
+
+    output_path = filepath.replace(".f90", "_gt4py.py").replace(".F90", "_gt4py.py")
+    with open(output_path, "w") as f:
+        f.write(final_state.get("gt4py_module", ""))
+    print(f"\n   Written → {output_path}")
+
+    blocked = [k for k in final_state.get("kernel_results", [])
+               if k.get("purity") == "blocked"]
+    if blocked:
+        print(f"   {len(blocked)} routine(s) cannot be field operators:")
+        for kernel in blocked:
+            print(f"     - {kernel['routine_name']}: {kernel.get('purity_reason', '')}")
+
+    if final_state.get("domain_check_skipped"):
+        print("\n⚠️  gt4py not installed — operators emitted but NOT type-checked.")
+        print("   `pip install gt4py` to validate them against gt4py.next.")
+        return 0
+
+    if not final_state.get("domain_validated", False):
+        print("\n❌ A field operator failed the gt4py type-check.")
+        print(final_state.get("domain_log", ""))
+        return 1
+
+    print("\n✅ Field operators emitted and type-checked against gt4py.next.")
+    return 0
+
+
 def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
     """Phase 1 — pipeline Fortran GPU + Cython.
 
@@ -206,6 +258,18 @@ def run_port_batch():
 # The split fixes a bug where calling `fortranspire gpu/translate/profile`
 # through the unified CLI was triggering the deprecation message intended
 # only for the legacy `agent-*` aliases.
+
+
+def _gt4py_main():
+    """Fortran → gt4py.next field operators (unified `fortranspire gt4py`)."""
+    parser = argparse.ArgumentParser(
+        description="🌐 Fortran → gt4py.next field operators (experimental)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="Example:\n  fortranspire gt4py /path/to/kernel.f90\n",
+    )
+    parser.add_argument("filepath", help="Path to the .f90 Fortran file")
+    args = parser.parse_args()
+    return gt4py_file(args.filepath)
 
 
 def _translate_main():

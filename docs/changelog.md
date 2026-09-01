@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added — GT4Py emitter (issue #42)
+
+- **`fortranspire gt4py`** — Fortran → gt4py.next field operators. The
+  pipeline is the Phase 2 graph with the emission and validation swapped:
+  `parse → extract → functionalize → gt4py_kernel → domain_validate`. The
+  first three nodes are shared with Phase 1, and **`functionalize` is the
+  Phase 2 (JAX) node reused unchanged** — gt4py.next is functional, so the
+  same purity analysis decides both targets.
+- **`gt4py_kernel`** emission node (`fortranspire/agent/nodes_gt4py/`),
+  mirroring `jax_kernel`, with externalised prompts
+  `prompts/gt4py_kernel/{en,fr}/v1.md`. The prompt teaches the
+  correspondences from the spec and pins the confirmed gt4py.next ≥ 1.2 API.
+- **`domain_validate`** — type-checks each emitted operator against
+  gt4py.next's own frontend by forcing its `.foast_stage`, which raises
+  `DSLError` on a malformed operator (a scalar where a field is declared,
+  an illegal construct) with no execution or backend compile. Two facts
+  learned by running gt4py drove the design: a field operator must live in
+  a real `.py` file (gt4py reads its source via `inspect.getsourcelines`,
+  so the JAX-style `exec` fails), and gt4py is not a project dependency (it
+  needs a `dace` pre-release the locked resolver won't pull), so the node
+  degrades to `skipped` when gt4py is absent rather than failing.
+- The whole GT4Py surface (API, `FieldOffset`, `where`, `neighbor_sum`,
+  `DimensionKind`, backends, and the validation mechanism) is **verified
+  against gt4py.next 1.2.1**, not written from memory; the spec §11 records
+  what was confirmed and the one remaining execution-detail nuance.
+
+
+### Added — GT4Py target groundwork (issue #42)
+
+- **Specification** `docs/concepts/gt4py-next-patterns.md` — the didactic
+  reference for Fortran → **gt4py.next** (the functional frontend, not the
+  legacy gtscript the original scope described), with every construct set
+  beside its counterpart and the reasoning. Grounded in the current
+  gt4py.next repo API; volatile API-surface points pinned as "verify
+  against the installed version".
+- **`FORT032` — GT4Py portability score**, surfaced by `analyze` and
+  `explain`. Deterministic, no LLM: it scores each routine 5 (clean field
+  operator) / 3 (needs `where`/`scan_operator`) / 1 (unstructured or hard)
+  / 0 (does not map), so a user triages GT4Py targets before paying for a
+  port. New `fortranspire/agent/nodes_gt4py/portability.py`. The score's
+  floor is the **same** purity verdict the JAX target uses (via the Phase 2
+  `functionalize` node), so the two targets never disagree about whether a
+  routine can be pure. Only routines below 5 are annotated, like FORT030.
+- **Cheat-sheet** `docs/concepts/gt4py-next-cheatsheet.md` — the fast
+  side-by-side lookup, mirroring the Fortran-patterns summary table.
+
+
 ### Fixed
 
 - **`bench` no longer gates on `gfortran_seconds` (issue #72).** It clocks
