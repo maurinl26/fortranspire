@@ -45,6 +45,163 @@ _INTRINSICS = frozenset({
 })
 
 
+def _basic_dtype(loki_type) -> str:
+    """Map a Loki declared type to 'integer' | 'real' | 'logical' | 'complex'."""
+    from loki import BasicType
+
+    dt = getattr(loki_type, "dtype", None)
+    return {
+        BasicType.INTEGER: "integer",
+        BasicType.REAL: "real",
+        BasicType.LOGICAL: "logical",
+        BasicType.COMPLEX: "complex",
+    }.get(dt, "unknown")
+
+
+def infer_dtypes(routine) -> Dict[str, str]:
+    """Best-effort dtype per referenced symbol: 'integer' | 'real' | … | 'unknown'.
+
+    Declared symbols (arguments, locals) get their Loki type directly. Symbols
+    with no local declaration — promoted module state (#5) — are typed from how
+    they are *used*, which is decidable syntactically and is exactly what
+    gradcheck needs: an integer index or loop bound must never be fed a float.
+
+    Integer evidence, any one of which is conclusive:
+      * loop index variable, or a symbol appearing in a loop **bound**;
+      * a symbol used as an array **subscript**;
+      * a symbol in a local array's **dimension** (a size);
+      * a symbol compared against an integer literal (``NSPECIAL_RXN .GT. 0``);
+      * an array whose value is assigned to an integer target
+        (``ISP1 = IRM2(...)`` ⇒ ``IRM2`` is an integer table).
+
+    Everything else stays 'unknown'; gradcheck treats unknown as differentiable
+    (float), the safe default for the numeric payload (``RKI``, ``SC``, …).
+    """
+    from loki import FindNodes, FindVariables
+    from loki.ir.nodes import Assignment, VariableDeclaration, Loop
+    from loki.expression import symbols as sym
+
+    dtypes: Dict[str, str] = {}
+
+    # 1. Declared types (arguments and locals live in the spec).
+    for decl in FindNodes(VariableDeclaration).visit(routine.spec):
+        base = _basic_dtype(getattr(decl, "symbols", [None])[0].type
+                            if decl.symbols else None)
+        for v in decl.symbols:
+            dtypes[v.name.lower()] = _basic_dtype(v.type)
+
+    integer_ctx: set[str] = set()
+
+    def _names(node) -> list[str]:
+        return [v.name.lower() for v in FindVariables().visit(node)
+                if isinstance(v, (sym.MetaSymbol, sym.TypedSymbol))
+                and not isinstance(v, sym.ProcedureSymbol)]
+
+    # 2. Loop indices and everything in a loop bound → integer.
+    for lp in FindNodes(Loop).visit(routine.body):
+        if lp.variable is not None:
+            integer_ctx.add(str(lp.variable).lower())
+        if lp.bounds is not None:
+            integer_ctx.update(_names(lp.bounds))
+
+    # 3. Array subscripts (body) and local-array dimensions (spec) → integer.
+    for v in FindVariables().visit(routine.body):
+        if isinstance(v, sym.Array):
+            for dim in (getattr(v, "dimensions", None) or []):
+                integer_ctx.update(_names(dim))
+    for decl in FindNodes(VariableDeclaration).visit(routine.spec):
+        for var in decl.symbols:
+            for dim in (getattr(var, "dimensions", None) or []):
+                integer_ctx.update(_names(dim))
+
+    # 4. Comparison against an integer literal, and integer-target assignments.
+    for a in FindNodes(Assignment).visit(routine.body):
+        lhs_base = str(a.lhs).split("(")[0].strip().lower()
+        if dtypes.get(lhs_base) == "integer":
+            # a scalar-ish RHS that is a single symbol/array ref → that table is integer
+            rhs_names = _names(a.rhs)
+            if len(rhs_names) >= 1:
+                # the head symbol of the RHS reference (e.g. IRM2 in IRM2(NRK,NR,NCS))
+                head = str(a.rhs).split("(")[0].strip().lower()
+                if head and head.replace("_", "").isidentifier():
+                    integer_ctx.add(head)
+
+    # Integer comparisons live in Conditional conditions (`NSPECIAL_RXN .GT. 0`).
+    _mark_integer_comparisons(routine, integer_ctx)
+
+    # Merge: usage-based integer only fills what a declaration did not already type.
+    for name in integer_ctx:
+        dtypes.setdefault(name, "integer")
+        if dtypes.get(name) == "unknown":
+            dtypes[name] = "integer"
+
+    return dtypes
+
+
+def _mark_integer_comparisons(routine, integer_ctx: set) -> None:
+    """A symbol compared against an integer literal is integer (e.g. `n .GT. 0`)."""
+    from loki import FindNodes
+    from loki.ir.nodes import Conditional
+    from loki.expression import symbols as sym
+
+    try:
+        from pymbolic.primitives import Comparison
+    except Exception:  # noqa: BLE001
+        return
+
+    def _walk(expr):
+        if isinstance(expr, Comparison):
+            left, right = expr.left, expr.right
+            for a, b in ((left, right), (right, left)):
+                if isinstance(b, sym.IntLiteral) and isinstance(a, (sym.Scalar, sym.DeferredTypeSymbol)):
+                    integer_ctx.add(a.name.lower())
+        for child in getattr(expr, "children", ()) or ():
+            _walk(child)
+
+    for cond in FindNodes(Conditional).visit(routine.body):
+        try:
+            _walk(cond.condition)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def integer_index_args(routine) -> List[str]:
+    """Integer symbols whose *value* is an index, so a random probe is unsafe.
+
+    A loop bound can take any extent, but an index — an integer **array**
+    (a lookup table like ``IRM2``), or an integer scalar used as an array
+    **subscript** — must be a valid position into another array whose shape is
+    not known from this file alone. gradcheck cannot fabricate those, so it
+    reports them as a required *fixture* instead of crashing on an
+    out-of-range probe. This is the honest boundary of a from-scratch check.
+    """
+    from loki import FindNodes, FindVariables
+    from loki.ir.nodes import VariableDeclaration
+    from loki.expression import symbols as sym
+
+    dtypes = infer_dtypes(routine)
+    index: set[str] = set()
+
+    # integer arrays = lookup tables
+    declared_arrays = set()
+    for decl in FindNodes(VariableDeclaration).visit(routine.spec):
+        for v in decl.symbols:
+            if getattr(v, "dimensions", None):
+                declared_arrays.add(v.name.lower())
+    for v in FindVariables().visit(routine.body):
+        low = v.name.lower()
+        if isinstance(v, sym.Array) and dtypes.get(low) == "integer":
+            index.add(low)
+        # integer scalar used as a subscript
+        if isinstance(v, sym.Array):
+            for dim in (getattr(v, "dimensions", None) or []):
+                for s in FindVariables().visit(dim):
+                    if dtypes.get(s.name.lower()) == "integer":
+                        index.add(s.name.lower())
+
+    return sorted(index)
+
+
 @dataclass
 class FreeSymbols:
     """Module-provided symbols a routine references but does not declare."""

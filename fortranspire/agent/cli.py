@@ -103,6 +103,14 @@ def translate_file(filepath: str, *, smoothing: str = "none") -> int:
         print(final_state.get("gradcheck_log", ""))
         return 1
 
+    unverified = final_state.get("gradcheck_unverified", [])
+    if unverified:
+        print(f"\n⚠️  Translation complete — {len(unverified)} kernel(s) emitted but "
+              "NOT verified (a valid index fixture is required):")
+        for msg in unverified:
+            print(f"   - {msg}")
+        return 0
+
     print("\n✅ Translation complete, gradients verified.")
     return 0
 

@@ -175,11 +175,15 @@ def parser_phase1(state: Phase1State) -> dict:
             # cannot see module globals, so these get promoted to explicit
             # arguments downstream. Deterministic, from the AST.
             try:
-                from fortranspire.agent.dataflow import free_symbols
+                from fortranspire.agent.dataflow import (
+                    free_symbols, infer_dtypes, integer_index_args,
+                )
                 fs = free_symbols(routine)
                 free_reads, free_writes = fs.reads, fs.writes
+                arg_dtypes = infer_dtypes(routine)
+                index_args = integer_index_args(routine)
             except Exception as _exc:  # noqa: BLE001 - analysis must never break parsing
-                free_reads, free_writes = [], []
+                free_reads, free_writes, arg_dtypes, index_args = [], [], {}, []
                 print(f"  (free-symbol analysis skipped for {routine.name}: {_exc})")
             if free_reads or free_writes:
                 print(f"  Free module state in {routine.name}: "
@@ -199,6 +203,8 @@ def parser_phase1(state: Phase1State) -> dict:
                 "dimensions":         dimensions,
                 "free_reads":         free_reads,
                 "free_writes":        free_writes,
+                "arg_dtypes":         arg_dtypes,
+                "index_args":         index_args,
                 "status":             "pending",
                 "error_log":          "",
             })

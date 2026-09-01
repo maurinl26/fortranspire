@@ -88,3 +88,39 @@ def test_free_symbols_finds_unresolved_module_state():
     # declared names and the loop index are bound, never free:
     assert not ({"n", "y", "dydt", "i"} & got)
     assert fs.writes == []
+
+
+# ── dtype inference & index detection (issue #4) ─────────────────────────────
+
+_GATHER = """
+subroutine gather(n, idx, src, dst)
+  implicit none
+  integer, intent(in) :: n, idx(n)
+  real(8), intent(in) :: src(n)
+  real(8), intent(out) :: dst(n)
+  integer :: i
+  do i = 1, n
+     dst(i) = src(idx(i))
+  end do
+end subroutine gather
+"""
+
+
+def test_infer_dtypes_types_bounds_integer_and_payload_real():
+    pytest.importorskip("loki")
+    from fortranspire.agent.dataflow import infer_dtypes
+
+    dt = infer_dtypes(_parse_routine(_ROUTINE))
+    assert dt.get("n") == "integer"           # declared integer
+    assert dt.get("nreac") == "integer"       # module scalar used as a loop bound
+    assert dt.get("y") == "real"
+    assert dt.get("kmat") != "integer"        # numeric payload, never an index
+
+
+def test_integer_index_args_flags_a_lookup_table():
+    pytest.importorskip("loki")
+    from fortranspire.agent.dataflow import integer_index_args
+
+    idx = {a.lower() for a in integer_index_args(_parse_routine(_GATHER))}
+    assert "idx" in idx                        # integer array used as a subscript
+    assert "src" not in idx and "dst" not in idx
