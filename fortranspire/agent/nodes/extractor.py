@@ -56,22 +56,55 @@ def _entity_name(entity: str) -> str:
 
 
 def extractor_agent(state: Phase1State) -> dict:
-    """LLM : extrait les boucles compute du PROGRAM en subroutines dans un MODULE.
+    """Decompose the source into kernels. LLM **only** for a monolithic PROGRAM.
 
-    Cas typique : codes scientifiques monolithiques (seismic_CPML) où les kernels FD
-    sont des blocs do/enddo inline dans le PROGRAM. L'extraction est nécessaire pour :
-      - annoter chaque kernel avec PURE/ELEMENTAL individuellement
-      - ajouter !$acc parallel loop sur les boucles spatiales 2D
-      - générer un wrapper Cython sur des subroutines avec INTENT explicites
+    There are two shapes of input, and only one needs an LLM:
 
-    Sorties :
-      module_kernels.f90 — MODULE avec N subroutines (kernels GPU purs)
-      driver.f90         — PROGRAM driver appelant USE module_kernels + les subroutines
+    * **Modular** (a MODULE, or bare SUBROUTINEs) — the routines *are* the
+      kernels. The parser already derived each one from Loki's AST with its
+      real INTENT map, loops, I/O / SAVE flags and array dimensions. There is
+      nothing to lift, so the LLM must not run: on modular code it re-guesses
+      a decomposition against a prompt written for seismic finite-difference
+      PROGRAMs and re-parses declarations by regex — which is exactly how it
+      mangled CMAQ ``RBFEVAL``. This path is deterministic, general and
+      spends no token.
+
+    * **Monolithic PROGRAM** (e.g. seismic_CPML) — the compute loops are inline
+      ``do/enddo`` blocks inside one PROGRAM. Here the loops must be lifted into
+      subroutines, which is a semantic refactoring the LLM does. The parser
+      set ``is_program`` so we route on it.
+
+    Outputs (monolithic path):
+      module_kernels.f90 — MODULE with N kernel subroutines
+      driver.f90         — PROGRAM driver calling USE module_kernels
     """
     print(f"\n{SEP}")
     print("  [Extractor] Identifying and extracting compute kernels into MODULE")
     print(SEP)
 
+    # ── Loki-native path: modular source is already decomposed ──────────────
+    # `is_program` comes from the parser (a real PROGRAM block was seen). When
+    # it is false the source is a module / subroutines and the parser's
+    # kernel_results are the answer — pass them through untouched.
+    if not state.get("is_program"):
+        routines = state.get("kernel_results", [])
+        names = [k["routine_name"] for k in routines]
+        print(f"  Modular source — {len(names)} routine(s) already decomposed "
+              f"by Loki's AST; skipping LLM extraction.")
+        for n in names:
+            print(f"    • {n}")
+        module_src = "\n\n".join(k.get("fortran_code", "") for k in routines)
+        if module_src.strip():
+            _save(_out("fortran_gpu") / "module_kernels.f90", module_src)
+        return {
+            "module_fortran":  module_src,
+            "driver_fortran":  "",
+            "kernel_names":    names,
+            "kernel_results":  routines,
+            "executed_agents": list(state.get("executed_agents", [])) + ["extractor"],
+        }
+
+    # ── Monolithic PROGRAM path: lift inline compute loops into subroutines ──
     # Reasoning stage: semantic refactoring of monolithic Fortran → modular form.
     # Best fit: Mistral-Large (or any large reasoning model on a sovereign endpoint).
     from fortranspire.llm import get_llm
