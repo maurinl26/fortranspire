@@ -93,17 +93,30 @@ def _make_inputs(kernel: JaxKernelInfo, seed: int = 0) -> Dict[str, Any]:
 
     rng = np.random.default_rng(seed)
     dims = kernel.get("dimensions") or {}
+    dtypes = {k.lower(): v for k, v in (kernel.get("arg_dtypes") or {}).items()}
     values: Dict[str, Any] = {}
 
     for arg in kernel["inputs"]:
         shape = [_extent(d) for d in dims.get(arg, [])]
-        if shape:
+        dt = dtypes.get(arg.lower(), "unknown")
+
+        if dt == "integer":
+            # Type-driven, not a name guess (the old whitelist missed
+            # `numcells`, `nspecial_rxn`, … and fed them floats — issue #4).
+            # A scalar integer is a bound → the probe extent; an integer array
+            # is a lookup table → zeros, which are a valid in-range index for a
+            # gather (index-topology kernels are caught earlier as needs_fixture).
+            if shape:
+                values[arg] = jnp.zeros(shape, dtype=jnp.int32)
+            else:
+                values[arg] = _DEFAULT_EXTENT
+        elif shape:
             values[arg] = jnp.asarray(rng.standard_normal(shape))
         else:
-            # A scalar with no declared dimension. Integers used as loop
-            # bounds must stay integral or the kernel indexes out of range,
-            # so anything that looks like an extent gets the probe extent.
-            if arg.lower() in {"n", "m", "nx", "ny", "nz", "nt", "npts"}:
+            # real / unknown scalar → a float, the differentiable default for
+            # the numeric payload. The legacy extent names stay a safety net for
+            # kernels the dtype pass could not type (regex-frontend fallbacks).
+            if dt == "unknown" and arg.lower() in {"n", "m", "nx", "ny", "nz", "nt", "npts"}:
                 values[arg] = _DEFAULT_EXTENT
             else:
                 values[arg] = float(rng.standard_normal())
@@ -111,12 +124,18 @@ def _make_inputs(kernel: JaxKernelInfo, seed: int = 0) -> Dict[str, Any]:
     return values
 
 
-def _scalarise(fn: Callable, names: List[str]) -> Callable:
-    """Reduce the kernel's outputs to one scalar so `jax.grad` is defined."""
+def _scalarise(fn: Callable, dyn_names: List[str], static_vals: Dict[str, Any]) -> Callable:
+    """Reduce the kernel's outputs to one scalar so `jax.grad` is defined.
+
+    ``static_vals`` (integer bounds/flags) are bound as Python constants, not
+    passed through ``jit`` — a size fed as a traced value breaks
+    ``jnp.arange(n)`` / ``reshape`` even when it is correctly an integer, so it
+    must be static, which is exactly how these kernels are called in practice.
+    """
     import jax.numpy as jnp
 
-    def scalar(**kwargs):
-        out = fn(**{k: kwargs[k] for k in names})
+    def scalar(**dyn):
+        out = fn(**{**static_vals, **{k: dyn[k] for k in dyn_names}})
         parts = out if isinstance(out, tuple) else (out,)
         return sum(jnp.sum(jnp.asarray(p)) for p in parts)
 
@@ -157,10 +176,43 @@ def check_kernel(
     _enable_x64()
 
     names = list(kernel["inputs"])
-    inputs = _make_inputs(kernel, seed=seed)
-    scalar = _scalarise(fn, names)
 
-    diffable = [n for n in names if _differentiable(inputs[n])]
+    # Honest boundary (issue #4): an integer *index* — a lookup table like
+    # IRM2, or a scalar used as a subscript — must be a valid position into
+    # another array whose shape is not known from this file. A random probe
+    # would index out of range. Report it as a required fixture instead of
+    # crashing or fabricating a topology; resolving the shapes to lift this is
+    # the LFortran/whole-program step.
+    index_args = [n for n in names
+                  if n.lower() in {a.lower() for a in (kernel.get("index_args") or [])}]
+    if index_args:
+        return {
+            "status": "needs_fixture",
+            "jit": False,
+            "checked_args": [],
+            "skipped_args": names,
+            "fixture_args": index_args,
+            "reason": (
+                "integer index topology (" + ", ".join(index_args) + ") cannot be "
+                "synthesised from this file — the emitted kernel is well-formed but "
+                "differentiability needs a valid index fixture (resolve array shapes "
+                "cross-module to lift this)."
+            ),
+            "failures": [],
+        }
+
+    inputs = _make_inputs(kernel, seed=seed)
+
+    # Integer bounds/flags are bound statically (see _scalarise); the rest are
+    # the dynamic call, and only the float ones carry a gradient.
+    static_names = [n for n in names if isinstance(inputs[n], int)
+                    and not isinstance(inputs[n], bool)]
+    static_vals = {n: inputs[n] for n in static_names}
+    dyn_names = [n for n in names if n not in static_names]
+    dyn_inputs = {n: inputs[n] for n in dyn_names}
+    scalar = _scalarise(fn, dyn_names, static_vals)
+
+    diffable = [n for n in dyn_names if _differentiable(inputs[n])]
     report: Dict[str, Any] = {
         "status": "pass",
         "jit": False,
@@ -183,7 +235,7 @@ def check_kernel(
     # which is the entire reason to be in JAX. Checking grad alone would
     # green-light a kernel that cannot be used.
     try:
-        jax.jit(scalar)(**inputs).block_until_ready()
+        jax.jit(scalar)(**dyn_inputs).block_until_ready()
         report["jit"] = True
     except Exception as exc:  # noqa: BLE001
         report["jit"] = False
@@ -204,7 +256,7 @@ def check_kernel(
         base = inputs[name]
 
         def one_arg(x, _name=name):
-            return scalar(**{**inputs, _name: x})
+            return scalar(**{**dyn_inputs, _name: x})
 
         try:
             analytic = jax.grad(one_arg)(base)
@@ -258,6 +310,7 @@ def gradcheck_agent(state: Phase2State) -> dict:
 
     updated: List[JaxKernelInfo] = []
     failures: List[str] = []
+    unverified: List[str] = []
     logs: List[str] = []
 
     for kernel in state.get("kernel_results", []):
@@ -289,6 +342,12 @@ def gradcheck_agent(state: Phase2State) -> dict:
             print(f"  ✗ {name:<28} FAIL — {detail.get('kind')}")
             for failure in report["failures"][:3]:
                 print(f"      {failure}")
+        elif report["status"] == "needs_fixture":
+            entry["status"] = "needs_fixture"
+            msg = f"{name}: {report.get('reason', '')}"
+            unverified.append(msg)
+            print(f"  ⚠ {name:<28} NEEDS FIXTURE — {', '.join(report.get('fixture_args', []))}")
+            print(f"      {report.get('reason', '')}")
         elif report["status"] == "skipped":
             print(f"  ⏭ {name:<28} skipped — {report.get('reason', '')}")
         else:
@@ -297,15 +356,22 @@ def gradcheck_agent(state: Phase2State) -> dict:
 
         updated.append(entry)
 
+    # A refuted gradient blocks; an unverified one (needs a fixture) does not —
+    # the emission is well-formed, we just cannot synthesise a valid index
+    # topology here. Report it honestly rather than claim "verified".
     passed = not failures
-    if passed:
-        print("\n  All emitted kernels are differentiable and their gradients agree.")
-    else:
+    if failures:
         print(f"\n  {len(failures)} kernel(s) failed the gradient check — blocking.")
+    elif unverified:
+        print(f"\n  {len(unverified)} kernel(s) emitted but UNVERIFIED — a valid "
+              "index fixture is required to check the gradient.")
+    else:
+        print("\n  All emitted kernels are differentiable and their gradients agree.")
 
     return {
         "kernel_results": updated,
         "gradcheck_passed": passed,
-        "gradcheck_log": "\n".join(logs),
+        "gradcheck_unverified": unverified,
+        "gradcheck_log": "\n".join(logs + unverified),
         "executed_agents": state.get("executed_agents", []) + ["gradcheck"],
     }

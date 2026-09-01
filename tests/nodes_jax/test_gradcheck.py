@@ -199,3 +199,50 @@ class TestNodeContract:
         }
         out = gradcheck_agent(state)
         assert out["gradcheck_passed"] is False
+
+
+class TestTypeAwareInputs:
+    """Issue #4 — integer args typed from the AST, not a name whitelist."""
+
+    def test_integer_bound_is_not_differentiated_and_kernel_passes(self):
+        # `n` is an integer bound; a float would break `jnp.arange(n)`.
+        fn = compile_fn("""
+import jax.numpy as jnp
+def k(n, x):
+    return x * jnp.arange(n, dtype=jnp.float64)
+""")
+        k = {**kernel(inputs=("n", "x")),
+             "arg_dtypes": {"n": "integer", "x": "real"},
+             "dimensions": {"x": ["8"]}}
+        report = check_kernel(fn, k)
+        assert report["status"] == "pass"
+        assert "n" in report["skipped_args"]     # integer → not differentiated
+        assert "x" in report["checked_args"]
+
+    def test_integer_index_arg_reports_needs_fixture_not_a_crash(self):
+        # `idx` is an integer index table — a random probe would index out of
+        # range. gradcheck must report it, not fabricate or crash.
+        k = {**kernel(inputs=("idx", "x")),
+             "arg_dtypes": {"idx": "integer", "x": "real"},
+             "index_args": ["idx"],
+             "dimensions": {"idx": ["8"], "x": ["8"]}}
+        report = check_kernel(lambda **kw: 0.0, k)
+        assert report["status"] == "needs_fixture"
+        assert "idx" in report["fixture_args"]
+
+    def test_needs_fixture_is_unverified_but_not_blocking(self):
+        state = {
+            "kernel_results": [{
+                **kernel(inputs=("idx", "x")),
+                "arg_dtypes": {"idx": "integer", "x": "real"},
+                "index_args": ["idx"],
+                "dimensions": {"idx": ["8"], "x": ["8"]},
+                "jax_code": "def k(idx, x):\n    return x[idx]\n",
+                "status": "pending",
+            }],
+            "executed_agents": [],
+        }
+        out = gradcheck_agent(state)
+        assert out["gradcheck_passed"] is True            # not a refutation
+        assert out["gradcheck_unverified"]                # but flagged unverified
+        assert out["kernel_results"][0]["status"] == "needs_fixture"
