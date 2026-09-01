@@ -13,6 +13,48 @@ from fortranspire.agent.nodes._common import SEP, _out, _save, _strip_markdown
 from fortranspire.agent.nodes._state import KernelInfo, Phase1State
 
 
+def _split_entities(decl: str) -> List[str]:
+    """Split a Fortran entity-declaration list on **top-level** commas.
+
+    A declaration like ``rki(numcells,nrxns), yin(numcells,ischan)`` must
+    split into two entities, not four: the commas *inside* the array
+    dimension ``(...)`` are not separators. A naive ``split(',')`` breaks
+    every multi-dimensional array argument, corrupting its name to
+    ``rki(numcells`` — which then propagates into the derived signature and
+    the emitted kernel's keyword arguments.
+    """
+    entities: List[str] = []
+    depth = 0
+    current: List[str] = []
+    for ch in decl:
+        if ch == "(":
+            depth += 1
+            current.append(ch)
+        elif ch == ")":
+            depth = max(0, depth - 1)
+            current.append(ch)
+        elif ch == "," and depth == 0:
+            entities.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        entities.append("".join(current))
+    return [e for e in (e.strip() for e in entities) if e]
+
+
+def _entity_name(entity: str) -> str:
+    """The bare argument name from a declared entity.
+
+    ``rki(numcells,nrxns)`` → ``rki``; ``x => null()`` and ``y = 0.0`` keep
+    only the identifier. The INTENT map is keyed by the argument name, not
+    its shape or initialiser.
+    """
+    entity = entity.split("=", 1)[0]          # drop initialiser / pointer assoc
+    entity = entity.split("(", 1)[0]          # drop the dimension spec
+    return entity.strip()
+
+
 def extractor_agent(state: Phase1State) -> dict:
     """LLM : extrait les boucles compute du PROGRAM en subroutines dans un MODULE.
 
@@ -192,9 +234,10 @@ def extractor_agent(state: Phase1State) -> dict:
             for m in re.finditer(r'intent\s*\(\s*(in|out|inout)\s*\)\s*::\s*([^\n!]+)',
                                   sub_code, re.IGNORECASE):
                 intent_str = m.group(1).upper()
-                for var in m.group(2).replace(' ', '').split(','):
-                    if var.strip():
-                        intent_map[var.strip()] = intent_str
+                for entity in _split_entities(m.group(2)):
+                    name = _entity_name(entity)
+                    if name:
+                        intent_map[name] = intent_str
 
             updated_kernels.append({
                 "routine_name":       name,

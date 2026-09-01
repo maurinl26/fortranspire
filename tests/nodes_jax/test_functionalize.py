@@ -64,15 +64,21 @@ class TestSignature:
     @pytest.mark.parametrize(
         "intents,expected",
         [
-            ({"a": "IN", "b": "OUT"}, "def k(a) -> b"),
-            ({"a": "IN", "b": "OUT", "c": "OUT"}, "def k(a) -> tuple[b, c]"),
-            ({"v": "INOUT"}, "def k(v) -> v"),
-            ({"a": "IN"}, "def k(a) -> None"),
+            ({"a": "IN", "b": "OUT"}, "def k(a):  # returns: b"),
+            ({"a": "IN", "b": "OUT", "c": "OUT"}, "def k(a):  # returns: (b, c)"),
+            ({"v": "INOUT"}, "def k(v):  # returns: v"),
+            ({"a": "IN"}, "def k(a):  # returns: None"),
         ],
     )
     def test_rendered_signature(self, intents, expected):
         inputs, outputs, _ = _split_by_intent(intents)
-        assert _render_signature("k", inputs, outputs) == expected
+        rendered = _render_signature("k", inputs, outputs)
+        assert rendered == expected
+        # It must be importable on its own: a `-> outvar` annotation would
+        # raise NameError at def-time (regression guard for the bug this fixes).
+        # dont_inherit=True so no `from __future__ import annotations` in this
+        # test module can mask the failure the way gradcheck.py's did.
+        exec(compile(rendered + "\n    pass", "<sig>", "exec", dont_inherit=True), {})
 
 
 class TestPurityVerdict:
