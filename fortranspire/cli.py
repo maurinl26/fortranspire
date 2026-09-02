@@ -31,6 +31,7 @@ import sys
 #   - a legacy ``run_*()`` that calls ``sys.exit`` internally (gpu / translate /
 #     profile). The dispatcher catches the SystemExit and propagates the code.
 _DISPATCH: dict[str, tuple[str, str]] = {
+    "start":      ("fortranspire.agent.start",    "main"),
     "analyze":    ("fortranspire.agent.analyze",  "main"),
     "doc":        ("fortranspire.agent.document", "main"),
     "explain":    ("fortranspire.agent.explain",  "main"),
@@ -63,6 +64,7 @@ Usage:
   fortranspire <command> --help
 
 Commands:
+  start       ★ Don't know where to begin? Triage a repo + guide the first port
   analyze     Static analysis (Loki AST, no LLM, CI-friendly)
   doc         Documentation generator (inline !> + Sphinx)
   explain     Pre-flight cost + risk estimate (no LLM, no tokens)
@@ -86,6 +88,8 @@ Legacy aliases (deprecated, removed in 0.3):
   agent-port-batch, agent-translate, agent-profile, run-mcp.
 
 Examples:
+  fortranspire start                 # new here? scan the cwd and guide the first port
+  fortranspire start src/ --run      # …and run the recommended step
   fortranspire analyze src/
   fortranspire explain --output estimate.md src/
   fortranspire gpu src/kernel.f90
