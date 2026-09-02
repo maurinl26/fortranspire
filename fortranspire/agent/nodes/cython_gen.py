@@ -23,8 +23,10 @@ arrays already resident on the device — anything exposing
 ``bind(c)`` shim that wraps the call in ``!$acc data deviceptr(...)``: no
 copyin/copyout, no host round-trip, zero-copy interop via the standard protocol.
 The device entry is emitted only when every array extent is explicitly sizable in
-the shim (an integer literal or another argument) — ``deviceptr`` forbids
-assumed-size arrays.
+the shim (an integer literal, another argument, or an integer module PARAMETER we
+can resolve — imported with a generated ``use …, only:``) — ``deviceptr`` forbids
+assumed-size arrays — and every array dtype has an iso_c_binding equivalent (half
+precision has none, so it stays on the dtype-agnostic JAX/DLPack path).
 """
 from __future__ import annotations
 
@@ -33,20 +35,27 @@ from typing import Dict, List, Optional
 _C_TO_NP = {
     "double": "np.float64", "float": "np.float32",
     "int": "np.int32", "long": "np.int64",
-    "double complex": "np.complex128",
+    "short": "np.int16", "signed char": "np.int8",
+    "double complex": "np.complex128", "float complex": "np.complex64",
 }
 _C_TO_ISO = {
     "double": "real(c_double)", "float": "real(c_float)",
     "int": "integer(c_int)", "long": "integer(c_long)",
+    "short": "integer(c_short)", "signed char": "integer(c_signed_char)",
     "double complex": "complex(c_double_complex)",
+    "float complex": "complex(c_float_complex)",
 }
 # numpy typestr (kind+size, byteorder-agnostic) — for the CAI dtype check.
+# Half precision (f2/bf16) has no iso_c_binding C type, so it cannot cross the
+# bind(c) boundary — those live only on the dtype-agnostic JAX/DLPack path.
 _C_TO_TYPESTR = {
     "double": "f8", "float": "f4", "int": "i4", "long": "i8",
-    "double complex": "c16",
+    "short": "i2", "signed char": "i1",
+    "double complex": "c16", "float complex": "c8",
 }
 _C_TO_ITEMSIZE = {
-    "double": 8, "float": 4, "int": 4, "long": 8, "double complex": 16,
+    "double": 8, "float": 4, "int": 4, "long": 8, "short": 2,
+    "signed char": 1, "double complex": 16, "float complex": 8,
 }
 
 
@@ -72,20 +81,36 @@ def _array_args(kernel: dict) -> List[str]:
     return [a for a in _args(kernel) if _rank(kernel, a)]
 
 
+def _resolved(kernel: dict) -> dict:
+    return kernel.get("resolved") or {}
+
+
+def _extent_param(kernel: dict, d: str) -> Optional[dict]:
+    """The resolved record for `d` when it is an integer module PARAMETER, else None.
+
+    Such a parameter is a legal explicit extent: it is a compile-time constant that
+    the shim brings into scope (it `use`s the kernels module, and we add a `use …,
+    only:` for any parameter imported from another module)."""
+    r = _resolved(kernel).get(str(d).strip().lower())
+    if r and r.get("is_parameter") and r.get("dtype") == "integer":
+        return r
+    return None
+
+
 def _device_shape(kernel: dict, arg: str) -> Optional[str]:
     """Explicit-shape declaration for the deviceptr variant, or None if unsizable.
 
     OpenACC `deviceptr` rejects assumed-size (`a(*)`) arrays — the array must have
-    an explicit shape in scope. We can size it only when every extent is an integer
-    literal or another argument of the kernel (which the shim also declares). A
-    module-parameter or expression extent → None → no device entry for this kernel
-    (the host entry still works)."""
+    an explicit shape in scope. An extent is sizable when it is an integer literal,
+    another argument of the kernel, or an integer module PARAMETER we can resolve
+    (in scope via `use`). Any other extent (a non-parameter variable, an expression)
+    → None → no device entry for this kernel (the host entry still works)."""
     dims = (kernel.get("dimensions") or {}).get(arg, [])
     argset = set(_args(kernel))
     parts: List[str] = []
     for d in dims:
         d = str(d).strip()
-        if d.isdigit() or d in argset:
+        if d.isdigit() or d in argset or _extent_param(kernel, d) is not None:
             parts.append(d)
         else:
             return None
@@ -93,9 +118,41 @@ def _device_shape(kernel: dict, arg: str) -> Optional[str]:
 
 
 def _can_deviceptr(kernel: dict) -> bool:
-    """A device entry is emitted only when every array arg is explicitly sizable."""
+    """Emit a device entry only when every array arg is explicitly sizable AND has a
+    C dtype the CAI bridge maps (an unmappable dtype — e.g. half precision, which
+    iso_c_binding cannot express — falls back to the host entry, never a wrong
+    check)."""
     arrs = _array_args(kernel)
-    return bool(arrs) and all(_device_shape(kernel, a) is not None for a in arrs)
+    if not arrs:
+        return False
+    if any(_ctype(kernel, a) not in _C_TO_TYPESTR for a in arrs):
+        return False
+    return all(_device_shape(kernel, a) is not None for a in arrs)
+
+
+def _extent_param_imports(kernels: List[dict], kernels_module: str) -> Dict[str, List[str]]:
+    """{module: sorted parameters} for extent params imported from OTHER modules.
+
+    The shim already `use`s the kernels module, so a parameter defined there needs
+    no extra import; one coming from a sibling module (the common CMAQ case — an
+    array dimensioned by `rbdata_mod`'s `NRXN`) does."""
+    imports: Dict[str, set] = {}
+    for k in kernels:
+        if not _can_deviceptr(k):
+            continue
+        argset = set(_args(k))
+        for a in _array_args(k):
+            for d in (k.get("dimensions") or {}).get(a, []):
+                d = str(d).strip()
+                if d.isdigit() or d in argset:
+                    continue
+                rec = _extent_param(k, d)
+                if rec is None:
+                    continue
+                mod = rec.get("module") or ""
+                if mod and mod.lower() != kernels_module.lower():
+                    imports.setdefault(mod, set()).add(d)
+    return {m: sorted(v) for m, v in imports.items()}
 
 
 def render_shim(kernels: List[dict], module_name: str) -> str:
@@ -105,6 +162,12 @@ def render_shim(kernels: List[dict], module_name: str) -> str:
         "module fortranspire_c_api",
         "  use iso_c_binding",
         f"  use {module_name}",
+    ]
+    # extent parameters imported from sibling modules must be in scope for the
+    # device shim's explicit-shape declarations (e.g. `a(NRXN)`).
+    for mod, params in sorted(_extent_param_imports(kernels, module_name).items()):
+        out.append(f"  use {mod}, only: {', '.join(params)}")
+    out += [
         "  implicit none",
         "contains",
     ]
