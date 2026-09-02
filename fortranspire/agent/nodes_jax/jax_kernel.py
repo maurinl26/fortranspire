@@ -149,10 +149,33 @@ def jax_kernel_agent(state: Phase2State) -> dict:
             )
         )
 
+        # Semantic feedback: run gradcheck on the emitted code and, on failure,
+        # hand the exact gradient error back to the model for another try. This
+        # is what gives a clean-but-wrong emission (a bad lax.switch) a second,
+        # informed attempt instead of just blocking at the gradcheck node.
+        def _verify(candidate: str, _kernel=kernel, _name=name) -> list[str]:
+            from fortranspire.agent.nodes_jax.gradcheck import check_kernel
+            ns: dict = {}
+            try:
+                exec(candidate, ns)  # noqa: S102 - our own generated code
+                fn = ns[_name]
+            except Exception as exc:  # noqa: BLE001
+                return [f"the module fails to load: {type(exc).__name__}: {exc}"]
+            try:
+                report = check_kernel(fn, _kernel)
+            except Exception as exc:  # noqa: BLE001
+                return [f"gradcheck raised: {type(exc).__name__}: {exc}"]
+            if report.get("status") == "fail":
+                d = (report.get("failures") or [{}])[0]
+                return [f"the gradient check failed ({d.get('kind')}): "
+                        f"{str(d.get('detail', ''))[:220]} — fix the function so "
+                        "jax.grad agrees with finite differences under jit."]
+            return []   # pass / skipped / needs_fixture → nothing to re-emit for
+
         try:
             code, remaining, repairs = emit_with_repair(
                 llm, system, strip=_strip_markdown,
-                max_repairs=_MAX_REPAIRS, log=print,
+                max_repairs=_MAX_REPAIRS, log=print, verify=_verify,
             )
         except Exception as exc:  # noqa: BLE001 - one bad kernel must not kill the run
             print(f"  ✗ {name:<28} LLM error: {type(exc).__name__}: {exc}")
