@@ -98,3 +98,19 @@ def test_verify_not_consulted_while_deterministic_defects_remain():
     emit_with_repair(llm, system=None, strip=lambda s: s, max_repairs=3, verify=verify)
     # verify is consulted only after the deterministic defect is gone
     assert calls["verify"] >= 1
+
+
+def test_n_best_keeps_the_best_candidate_not_the_last():
+    # attempt 0: one data-branch (1 defect). repair → TWO data-branches (worse).
+    one_branch = ("import jax.numpy as jnp\ndef k(c, i, x):\n"
+                  "    n = c[i]\n    if n == 1:\n        return x\n    return x\n")
+    two_branch = ("import jax.numpy as jnp\ndef k(c, i, x):\n"
+                  "    n = c[i]\n    m = c[i]\n"
+                  "    if n == 1:\n        return x\n"
+                  "    if m == 2:\n        return x\n    return x\n")
+    llm = _FakeLLM([one_branch, two_branch])
+    code, remaining, repairs = emit_with_repair(
+        llm, system=None, strip=lambda s: s, max_repairs=1)
+    assert repairs == 1
+    assert code == one_branch          # kept the better first candidate
+    assert len(remaining) == 1         # not the 2-defect regression
