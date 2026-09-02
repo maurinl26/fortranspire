@@ -81,10 +81,27 @@ def cython_wrapper_agent(state: Phase1State) -> dict:
     print(f"  Generated: {module_name}.pyx, kernel_c.h, {module_name}_c_api.f90 "
           f"(bind(c) shim → module {kernels_mod}), pyproject.toml, setup.py")
 
+    # CUDA Graph capture/replay scaffold for an iterative OpenACC driver:
+    # capture the async kernel sequence once, replay it each step. The C helper
+    # is generic (independent of kernel args); the driver wraps its launches.
+    from fortranspire.agent.nodes.cuda_graph import render_cuda_graph
+
+    kernel_names = {k["routine_name"].lower() for k in eligible}
+    driver = state.get("driver_fortran") or ""
+    calls = [m.group(1) for m in re.finditer(r"\bCALL\s+(\w+)", driver, re.IGNORECASE)
+             if m.group(1).lower() in kernel_names]
+    graph = render_cuda_graph(calls)
+    _save(_out("fortran_gpu") / "fortranspire_cuda_graph.c", graph["c"])
+    _save(_out("fortran_gpu") / "fortranspire_cuda_graph.h", graph["h"])
+    _save(_out("fortran_gpu") / "cuda_graph_driver_usage.f90", graph["usage"])
+    print("  Generated: fortranspire_cuda_graph.c/.h + driver usage "
+          "(nvfortran + CUDA; replays the async kernel sequence each step)")
+
     return {
         "cython_pyx":    art["pyx"],
         "cython_header": art["header"],
         "cython_shim":   art["shim"],
         "cython_setup":  build_content,
+        "cuda_graph_c":  graph["c"],
         "executed_agents": list(state.get("executed_agents", [])) + ["cython_wrapper"],
     }
