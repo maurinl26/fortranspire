@@ -89,7 +89,17 @@ def _minimal_state(*, gpu_pragma: str) -> dict:
         "kernel_results": [
             {
                 "routine_name": "k",
-                "fortran_code": "subroutine k\n  do i=1,n\n  enddo\nend subroutine\n",
+                "fortran_code": (
+                    "subroutine k(n, x)\n"
+                    "  implicit none\n"
+                    "  integer, intent(in) :: n\n"
+                    "  real(8), intent(inout) :: x(n)\n"
+                    "  integer :: i\n"
+                    "  do i = 1, n\n"
+                    "     x(i) = x(i) * 2.0d0\n"
+                    "  end do\n"
+                    "end subroutine k\n"
+                ),
                 "pure_elemental_code": "",
                 "openacc_code": "",
                 "intent_map": {"x": "INOUT"},
@@ -128,12 +138,12 @@ def test_node_uses_openacc_prompt_by_default(
     _patch_get_llm(monkeypatch, stub)
 
     from fortranspire.agent.nodes.openacc import openacc_insert_agent
-    state = _minimal_state(gpu_pragma="acc")
-    openacc_insert_agent(state)
+    out = openacc_insert_agent(_minimal_state(gpu_pragma="acc"))
 
-    assert len(stub.system_prompts) >= 1
-    assert "OpenACC GPU expert" in stub.system_prompts[0]
-    assert "OpenMP target-offload" not in stub.system_prompts[0]
+    # Kernel pragma is now derived deterministically — dispatch shows in the code.
+    code = out["kernel_results"][0]["openacc_code"]
+    assert "!$acc parallel loop" in code
+    assert "!$omp" not in code
 
 
 def test_node_uses_openmp_prompt_when_omp_requested(
@@ -144,12 +154,11 @@ def test_node_uses_openmp_prompt_when_omp_requested(
     _patch_get_llm(monkeypatch, stub)
 
     from fortranspire.agent.nodes.openacc import openacc_insert_agent
-    state = _minimal_state(gpu_pragma="omp")
-    openacc_insert_agent(state)
+    out = openacc_insert_agent(_minimal_state(gpu_pragma="omp"))
 
-    assert len(stub.system_prompts) >= 1
-    assert "OpenMP target-offload" in stub.system_prompts[0]
-    assert "OpenACC GPU expert" not in stub.system_prompts[0]
+    code = out["kernel_results"][0]["openacc_code"]
+    assert "!$omp target teams distribute parallel do" in code
+    assert "!$acc parallel loop" not in code
 
 
 def test_node_falls_back_to_acc_on_unknown_pragma(
@@ -160,12 +169,11 @@ def test_node_falls_back_to_acc_on_unknown_pragma(
     _patch_get_llm(monkeypatch, stub)
 
     from fortranspire.agent.nodes.openacc import openacc_insert_agent
-    state = _minimal_state(gpu_pragma="cuda")  # nonsense
-    openacc_insert_agent(state)
+    result = openacc_insert_agent(_minimal_state(gpu_pragma="cuda"))  # nonsense
 
-    out = capsys.readouterr().out
-    assert "unknown gpu_pragma" in out
-    assert "OpenACC GPU expert" in stub.system_prompts[0]
+    printed = capsys.readouterr().out
+    assert "unknown gpu_pragma" in printed
+    assert "!$acc parallel loop" in result["kernel_results"][0]["openacc_code"]
 
 
 # ── CLI flag plumbing ───────────────────────────────────────────────────────
