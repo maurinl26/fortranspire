@@ -9,11 +9,18 @@ load_dotenv()
 @dataclass
 class AgentConfig:
     # --- Modèle Mistral par défaut (La Plateforme ou endpoint compatible) ---
+    # NOTE (reproducibility): `-latest` is a MOVING tag — Mistral repoints it over
+    # time, so a run is not reproducible across dates. Pin a dated version
+    # (e.g. MISTRAL_MODEL=mistral-large-2411) for a reproducible port.
     model_name: str = os.getenv("MISTRAL_MODEL", "mistral-large-latest")
 
-    # --- Paramètres de génération ---
-    temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.2"))
-    top_p: float = float(os.getenv("LLM_TOP_P", "0.9"))
+    # --- Génération ---
+    # temperature defaults to 0.0: a code *translation* must be reproducible —
+    # the same Fortran + the same model must yield the same JAX/OpenACC. A
+    # non-zero default made two runs of the same port diverge. Raise it
+    # deliberately (LLM_TEMPERATURE) only if you want sampling.
+    temperature: float = float(os.getenv("LLM_TEMPERATURE", "0.0"))
+    top_p: float = float(os.getenv("LLM_TOP_P", "1.0"))
     num_predict: int = int(os.getenv("LLM_NUM_PREDICT", "2048"))
 
     # --- Agent ---
