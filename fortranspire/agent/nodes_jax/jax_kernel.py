@@ -129,7 +129,8 @@ def jax_kernel_agent(state: Phase2State) -> dict:
         if skeleton is not None:
             derived += 1
             print(f"  ✓ {name:<28} {len(skeleton)} chars · derived (no LLM)")
-            updated.append({**kernel, "jax_code": skeleton, "status": "pending"})
+            updated.append({**kernel, "jax_code": skeleton, "status": "pending",
+                            "derived_deterministically": True})
             continue
 
         if llm is None:

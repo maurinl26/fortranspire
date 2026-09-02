@@ -102,6 +102,15 @@ def translate_file(filepath: str, *, smoothing: str = "none",
     output_path = _sibling_output(filepath, "_jax.py")
     _write_output(output_path, final_state.get("jax_module", ""), "JAX module")
 
+    # Provenance manifest — records model/version, temperature, tolerances, tool
+    # version, input digest, and whether the run is reproducible (#agentic-3).
+    from fortranspire.agent.manifest import build_manifest, write_manifest
+    manifest = build_manifest(final_state, input_path=filepath, target="jax")
+    manifest_path = _sibling_output(filepath, "_manifest.json")
+    write_manifest(manifest_path, manifest)
+    repro = "reproducible" if manifest["reproducible"] else "NOT reproducible"
+    print(f"   Manifest  → {manifest_path}  ({repro})")
+
     blocked = [k for k in final_state.get("kernel_results", [])
                if k.get("purity") == "blocked"]
     if blocked:
