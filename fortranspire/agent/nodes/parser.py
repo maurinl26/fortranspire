@@ -19,6 +19,30 @@ from fortranspire.agent.nodes._common import SEP
 from fortranspire.agent.nodes._state import KernelInfo, Phase1State
 
 
+def _c_type(dtype, kind) -> str:
+    """Map a Loki declared type to its C interop type (iso_c_binding).
+
+    Deterministic, from dtype + KIND. A REAL whose KIND is a parameter name
+    (not a concrete int Loki could fold) defaults to ``double`` — the safe HPC
+    choice, and exactly the case where a resolved frontend (LFortran) would give
+    certainty instead of a default.
+    """
+    try:
+        k = int(kind) if kind is not None else None
+    except (TypeError, ValueError):
+        k = None  # symbolic KIND (e.g. `real(dp)`) — not folded by Loki
+    name = str(getattr(dtype, "name", dtype) or "").upper()
+    if "INTEGER" in name:
+        return "long" if k == 8 else "int"
+    if "LOGICAL" in name:
+        return "int"
+    if "REAL" in name or "DOUBLE" in name:
+        return "float" if k == 4 else "double"
+    if "COMPLEX" in name:
+        return "double complex"
+    return "double"
+
+
 def parser_phase1(state: Phase1State) -> dict:
     """Parse the Fortran source with Loki and extract routines + global schema.
 
@@ -141,11 +165,17 @@ def parser_phase1(state: Phase1State) -> dict:
 
         for routine in all_routines:
             intent_map: Dict[str, str] = {}
+            arg_ctypes: Dict[str, str] = {}
             if hasattr(routine, 'arguments'):
                 for v in routine.arguments:
                     intent = getattr(v.type, 'intent', None)
                     if intent:
                         intent_map[v.name] = intent.upper()
+                    # C type for the Cython/iso_c_binding wrapper, from the
+                    # declared dtype + KIND (deterministic — never guessed).
+                    dt = getattr(v.type, 'dtype', None)
+                    kind = getattr(v.type, 'kind', None)
+                    arg_ctypes[v.name] = _c_type(dt, kind)
 
             loops = FindNodes(Loop).visit(routine.body)
             loop_descriptions = [
@@ -236,6 +266,7 @@ def parser_phase1(state: Phase1State) -> dict:
                 "free_reads":         free_reads,
                 "free_writes":        free_writes,
                 "arg_dtypes":         arg_dtypes,
+                "arg_ctypes":         arg_ctypes,
                 "index_args":         index_args,
                 "resolved":           resolved,
                 "status":             "pending",

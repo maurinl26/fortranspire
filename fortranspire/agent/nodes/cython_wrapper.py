@@ -1,103 +1,61 @@
-"""Node 5 — generate the Cython `.pyx` + `iso_c_binding` C header.
+"""Node 5 — generate the Cython `.pyx` + C header + bind(c) shim.
 
-Two LLM calls (`code` stage — pure boilerplate, Codestral is sufficient
-and cheaper than Mistral-Large).
+Deterministic, no LLM. The wrapper is pure boilerplate derived from the parsed
+INTENT map, KIND (``arg_ctypes``) and dimensions — see :mod:`.cython_gen`. An LLM
+guessing an ABI is the "guess what can be derived" anti-pattern, and an ABI it
+gets subtly wrong is a silent failure; deriving it makes the three artifacts
+reproducible, token-free and internally consistent by construction.
 """
 from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import List
 
-from fortranspire.agent.nodes._common import SEP, _out, _save, _strip_markdown
-from fortranspire.agent.nodes._state import KernelInfo, Phase1State
+from fortranspire.agent.nodes._common import SEP, _out, _save
+from fortranspire.agent.nodes._state import Phase1State
+from fortranspire.agent.nodes.cython_gen import generate_cython
+
+
+def _kernels_module_name(state: Phase1State, default: str) -> str:
+    """The module the shim must `use` — the one holding the compute kernels."""
+    src = state.get("module_fortran") or ""
+    m = re.search(r"^\s*MODULE\s+(\w+)", src, re.IGNORECASE | re.MULTILINE)
+    return m.group(1) if m else default
 
 
 def cython_wrapper_agent(state: Phase1State) -> dict:
-    """LLM : génère un wrapper Cython (.pyx) avec NumPy typed memoryviews."""
+    """Generate the Cython/C wrapper deterministically from the AST."""
     print(f"\n{SEP}")
-    print("  [Cython] Generating Python wrapper")
+    print("  [Cython] Generating Python wrapper (deterministic, no LLM)")
     print(SEP)
 
-    # Code-gen stage: boilerplate-heavy .pyx + iso_c_binding header.
-    # Codestral is faster and cheaper than Mistral-Large for this kind of work.
-    from fortranspire.llm import get_llm
-    from langchain_core.messages import SystemMessage, HumanMessage
-    llm = get_llm("code")
-
     # Only wrap compute kernels (no I/O)
-    eligible = [k for k in state.get("kernel_results", []) if not k["has_io"]]
+    eligible = [k for k in state.get("kernel_results", []) if not k.get("has_io")]
     if not eligible:
         print("  No eligible routines for Cython wrapping (all have I/O).")
         return {
-            "cython_pyx": "",
-            "cython_header": "",
-            "cython_setup": "",
+            "cython_pyx": "", "cython_header": "", "cython_setup": "",
             "executed_agents": list(state.get("executed_agents", [])) + ["cython_wrapper"],
         }
 
     filepath    = state["fortran_filepath"]
     module_name = Path(filepath).stem.lower().replace("-", "_").replace(".", "_")
+    kernels_mod = _kernels_module_name(state, f"{module_name}_kernels")
 
-    routines_summary = [
-        {
-            "name":       k["routine_name"],
-            "intent_map": k["intent_map"],
-            "dimensions": k["dimensions"],
-        }
-        for k in eligible
-    ]
+    art = generate_cython(eligible, module_name, kernels_module=kernels_mod)
 
-    from fortranspire.agent.schemas import CythonHeaderOutput, CythonPyxOutput
-    from fortranspire.observability import tracer
-    from fortranspire.observability.llm_callback import token_callback
-    from fortranspire.prompts.loader import load_prompt
-    pyx_llm    = llm.with_structured_output(CythonPyxOutput)
-    header_llm = llm.with_structured_output(CythonHeaderOutput)
-    model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
-
-    # ── Generate .pyx ────────────────────────────────────────────────
-    pyx_system = SystemMessage(content=load_prompt("cython_pyx", version="v2"))
-    pyx_prompt = HumanMessage(content=(
-        f"Generate a Cython wrapper (.pyx) for these Fortran subroutines "
-        f"compiled with nvfortran -acc (OpenACC).\n"
-        f"Module name: {module_name}\n"
-        f"Routines: {routines_summary}\n\n"
-        f"Requirements:\n"
-        f"  1. cdef extern from 'kernel_c.h' block declaring C signatures\n"
-        f"  2. cpdef functions with NumPy typed memoryviews:\n"
-        f"       np.float64_t[:] for 1-D arrays\n"
-        f"       np.float64_t[:,:] for 2-D arrays\n"
-        f"  3. np.asfortranarray() to ensure Fortran column-major layout\n"
-        f"  4. import numpy as np and cimport numpy as cnp at the top\n"
-        f"  5. # distutils: language = fortran  directive\n"
-        f"Return ONLY the .pyx file content."
-    ))
-
-    # ── Generate C header ────────────────────────────────────────────
-    header_system = SystemMessage(content=load_prompt("cython_header", version="v2"))
-    header_prompt = HumanMessage(content=(
-        f"Generate a C header file (kernel_c.h) for these Fortran subroutines "
-        f"using iso_c_binding:\n{routines_summary}\n"
-        f"Use double* for REAL(8) arrays, int* for INTEGER, void return type.\n"
-        f"Add include guards and extern 'C' block.\n"
-        f"Return ONLY the header file content."
-    ))
-
-    # ── pyproject.toml build config ──────────────────────────────────
     build_content = (
         f"[build-system]\n"
         f'requires = ["setuptools>=68", "Cython>=3.0", "numpy"]\n'
-        f'build-backend = "setuptools.backends.legacy:build"\n\n'
+        f'build-backend = "setuptools.build_meta"\n\n'
         f"[project]\n"
         f'name = "{module_name}_gpu"\n'
         f'version = "0.1.0"\n'
         f'description = "GPU-accelerated Fortran kernel via OpenACC + Cython"\n'
-        f'dependencies = ["numpy"]\n\n'
-        f"# Build the Cython extension with nvfortran -acc\n"
-        f"# Usage: python setup.py build_ext --inplace\n"
+        f'dependencies = ["numpy"]\n'
     )
 
+    # The shim + the OpenACC kernels compile together; the .pyx links against them.
     setup_content = (
         f"from setuptools import setup\n"
         f"from Cython.Build import cythonize\n"
@@ -105,48 +63,28 @@ def cython_wrapper_agent(state: Phase1State) -> dict:
         f"import numpy as np\n\n"
         f'ext = Extension(\n'
         f'    name="{module_name}",\n'
-        f'    sources=["cython/{module_name}.pyx", "fortran_gpu/kernel_gpu.f90"],\n'
+        f'    sources=["cython/{module_name}.pyx", "fortran_gpu/kernel_gpu.f90",\n'
+        f'             "fortran_gpu/{module_name}_c_api.f90"],\n'
         f'    include_dirs=["cython", np.get_include()],\n'
         f'    extra_compile_args=["-acc", "-gpu=cc80", "-Minfo=accel"],\n'
         f'    extra_link_args=["-acc", "-gpu=cc80"],\n'
-        f'    language="fortran",\n'
         f')\n\n'
         f"setup(name='{module_name}_gpu', ext_modules=cythonize([ext]))\n"
     )
 
-    pyx_code, header_code = "", ""
-    try:
-        with tracer.span(node="cython_pyx", model=model_name) as span:
-            cfg = {"callbacks": [token_callback(span)]}
-            try:
-                pyx_result = pyx_llm.invoke([pyx_system, pyx_prompt], config=cfg)
-                pyx_code   = _strip_markdown(pyx_result.pyx_code)
-            except Exception:
-                resp_pyx = llm.invoke([pyx_system, pyx_prompt], config=cfg)
-                pyx_code = _strip_markdown(resp_pyx.content)
-
-        with tracer.span(node="cython_header", model=model_name) as span:
-            cfg = {"callbacks": [token_callback(span)]}
-            try:
-                header_result = header_llm.invoke([header_system, header_prompt], config=cfg)
-                header_code   = _strip_markdown(header_result.header_code)
-            except Exception:
-                resp_header = llm.invoke([header_system, header_prompt], config=cfg)
-                header_code = _strip_markdown(resp_header.content)
-
-        cython_dir = _out("cython")
-        _save(cython_dir / f"{module_name}.pyx", pyx_code)
-        _save(cython_dir / "kernel_c.h", header_code)
-        _save(Path("output") / "pyproject.toml", build_content)
-        _save(Path("output") / "setup.py", setup_content)
-        print(f"  Generated: {module_name}.pyx, kernel_c.h, pyproject.toml, setup.py")
-
-    except Exception as e:
-        print(f"  LLM failed for Cython wrapper: {e}")
+    cython_dir = _out("cython")
+    _save(cython_dir / f"{module_name}.pyx", art["pyx"])
+    _save(cython_dir / "kernel_c.h", art["header"])
+    _save(_out("fortran_gpu") / f"{module_name}_c_api.f90", art["shim"])
+    _save(Path("output") / "pyproject.toml", build_content)
+    _save(Path("output") / "setup.py", setup_content)
+    print(f"  Generated: {module_name}.pyx, kernel_c.h, {module_name}_c_api.f90 "
+          f"(bind(c) shim → module {kernels_mod}), pyproject.toml, setup.py")
 
     return {
-        "cython_pyx":    pyx_code,
-        "cython_header": header_code,
+        "cython_pyx":    art["pyx"],
+        "cython_header": art["header"],
+        "cython_shim":   art["shim"],
         "cython_setup":  build_content,
         "executed_agents": list(state.get("executed_agents", [])) + ["cython_wrapper"],
     }
