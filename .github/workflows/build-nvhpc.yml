@@ -1,0 +1,68 @@
+# Build & publish the nvfortran (NVHPC) validation image (issue #121).
+#
+# The base is nvcr.io/nvidia/nvhpc (~10 GB) — pulling it needs an NGC login
+# (secret NGC_API_KEY). The result is pushed to ghcr.io/<owner>/fortranspire-nvhpc
+# and used by the GPU validation (gpu-validate.yml, scripts/gpu_validate.sh) so a
+# port is compiled with nvfortran AND numerically validated in a reproducible env.
+name: Build nvfortran image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - containers/Dockerfile.nvhpc
+      - pyproject.toml
+      - .github/workflows/build-nvhpc.yml
+  workflow_dispatch:
+
+concurrency:
+  group: build-nvhpc-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      NGC_API_KEY: ${{ secrets.NGC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Guard — NGC key required
+        run: |
+          if [ -z "$NGC_API_KEY" ]; then
+            echo "::error::NGC_API_KEY secret is not set — cannot pull nvcr.io/nvidia/nvhpc."
+            echo "Create a free NGC API key (ngc.nvidia.com) and add it as the NGC_API_KEY secret."
+            exit 1
+          fi
+
+      - name: Free disk (the NVHPC base is large)
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Log in to NGC (nvcr.io) for the NVHPC base
+        uses: docker/login-action@v3
+        with:
+          registry: nvcr.io
+          username: $oauthtoken
+          password: ${{ secrets.NGC_API_KEY }}
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: containers/Dockerfile.nvhpc
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fortranspire-nvhpc:latest
+            ghcr.io/${{ github.repository_owner }}/fortranspire-nvhpc:${{ github.sha }}
