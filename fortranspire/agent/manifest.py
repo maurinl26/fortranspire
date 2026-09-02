@@ -73,10 +73,29 @@ def build_manifest(final_state: Dict[str, Any], *, input_path: str,
             "equivalence_max_abs_err": eq.get("max_abs_err"),
         })
 
-    llm_used = not all_derived
+    # GPU (Phase 1): the deterministic passes use no LLM; only the extractor does,
+    # and only for a monolithic PROGRAM. So the LLM is used iff `is_program`.
+    if target == "gpu":
+        llm_used = bool(final_state.get("is_program"))
+    else:
+        llm_used = not all_derived
     reproducible = (not llm_used) or (model["temperature"] == 0.0 and model["pinned"])
 
-    return {
+    gpu_section = None
+    if target == "gpu":
+        gpu_section = {
+            "validation_level": final_state.get("validation_level", "generated"),
+            "numerically_validated": bool(final_state.get("numerically_validated")),
+            # Parallel GPU reductions/atomics are FP non-associative: the sum
+            # order depends on threads/scheduling, so the result is NOT
+            # bit-reproducible run-to-run or vs the CPU — only within a tolerance.
+            "runtime_bit_reproducible": False,
+            "runtime_note": ("parallel GPU reductions are FP non-associative → not "
+                             "bit-reproducible; the equivalence harness compares "
+                             "within (atol, rtol), not bit-exact"),
+        }
+
+    manifest = {
         "tool": "fortranspire",
         "tool_version": _tool_version(),
         "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -86,7 +105,7 @@ def build_manifest(final_state: Dict[str, Any], *, input_path: str,
         "llm_used": llm_used,
         "reproducible": reproducible,
         "reproducible_reason": (
-            "all kernels derived deterministically (no LLM)" if not llm_used
+            "deterministic generation, no LLM" if not llm_used
             else "temperature 0 + pinned model" if reproducible
             else "LLM at non-zero temperature or a moving `-latest` model — "
                  "pin MISTRAL_MODEL and set LLM_TEMPERATURE=0 to make it reproducible"
@@ -99,6 +118,9 @@ def build_manifest(final_state: Dict[str, Any], *, input_path: str,
         "executed_agents": final_state.get("executed_agents", []),
         "kernels": kernels,
     }
+    if gpu_section is not None:
+        manifest["gpu"] = gpu_section
+    return manifest
 
 
 def write_manifest(out_path: str, manifest: Dict[str, Any]) -> None:

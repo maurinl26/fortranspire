@@ -288,6 +288,16 @@ def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
     print(f"    🐍 Cython      : cd output && python setup.py build_ext --inplace")
     print(f"{'═' * 60}\n")
 
+    # Provenance manifest — records tool/model, the generation-reproducibility
+    # verdict, the validation level, and the honest caveat that GPU reductions
+    # are not bit-reproducible (only within tolerance). Same as the JAX path.
+    from fortranspire.agent.manifest import build_manifest, write_manifest
+    manifest = build_manifest(final_state, input_path=filepath, target="gpu")
+    manifest_path = _sibling_output(filepath, "_gpu_manifest.json")
+    write_manifest(manifest_path, manifest)
+    repro = "reproducible generation" if manifest["reproducible"] else "NON-reproducible generation"
+    print(f"  Manifest   : {manifest_path}  ({repro}; GPU runtime not bit-exact — see manifest)")
+
     if final_state.get("validation_log"):
         print("📋 Validation log:")
         print(final_state["validation_log"])
