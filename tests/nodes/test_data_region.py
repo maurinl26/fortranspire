@@ -61,3 +61,60 @@ def test_region_wraps_the_time_loop():
                           lines.index("!$acc end data"),
                           [i for i, l in enumerate(lines) if l == "end do"][0])
     assert di < doi < eddi < edi                    # data … do … end do … end data
+
+
+# ── liveness (optimal clauses) ───────────────────────────────────────────────
+
+from fortranspire.agent.nodes.data_region import (  # noqa: E402
+    analyse_liveness, array_actuals, clauses_from_liveness, find_region_bounds,
+)
+
+_KERNELS_LT = {
+    "k1": {"intent_map": {"a": "IN", "tmp": "OUT", "n": "IN"},
+           "dimensions": {"a": ["n"], "tmp": ["n"]}},
+    "k2": {"intent_map": {"tmp": "IN", "b": "OUT", "n": "IN"},
+           "dimensions": {"tmp": ["n"], "b": ["n"]}},
+}
+_DRIVER_LT = (
+    "program main\n  integer :: it, n\n  real(8) :: a(n), b(n), tmp(n)\n"
+    "  a = 1.0d0\n"
+    "  do it = 1, nstep\n"
+    "     call k1(a, tmp, n)\n"
+    "     call k2(tmp, b, n)\n"
+    "  end do\n"
+    "  print *, b\nend program main\n"
+)
+
+
+def _live():
+    kn = set(_KERNELS_LT)
+    calls = extract_kernel_calls(_DRIVER_LT, kn)
+    bounds = find_region_bounds(_DRIVER_LT, kn)
+    arrays = array_actuals(calls, _KERNELS_LT)
+    return analyse_liveness(_DRIVER_LT, arrays, bounds[0], bounds[1])
+
+
+def test_loop_local_temporary_becomes_create():
+    live = _live()
+    assert live["tmp"] == (False, False)          # never touched on the host
+    assert live["a"] == (True, False)             # written before the loop
+    assert live["b"] == (False, True)             # read after the loop
+    clauses = clauses_from_liveness(live)
+    assert clauses["create"] == ["tmp"]           # zero transfer — the win
+    assert clauses["copyin"] == ["a"]
+    assert clauses["copyout"] == ["b"]
+    assert clauses["copy"] == []
+
+
+def test_declarations_do_not_count_as_host_use():
+    # `tmp` appears only in its declaration before the loop → still create.
+    assert _live()["tmp"] == (False, False)
+
+
+def test_create_renders_in_acc_and_omp():
+    op, _ = render_data_pragma({"copyin": ["a"], "copyout": ["b"],
+                                "copy": [], "create": ["tmp"]}, "acc")
+    assert "create(tmp)" in op
+    op2, _ = render_data_pragma({"copyin": [], "copyout": [], "copy": [],
+                                 "create": ["tmp"]}, "omp")
+    assert "map(alloc: tmp)" in op2

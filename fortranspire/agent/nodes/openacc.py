@@ -150,14 +150,24 @@ def openacc_insert_agent(state: Phase1State) -> dict:
 
     if driver_src:
         from fortranspire.agent.nodes.data_region import (
-            derive_data_clauses, extract_kernel_calls, insert_data_region,
-            render_data_pragma,
+            analyse_liveness, array_actuals, clauses_from_liveness,
+            derive_data_clauses, extract_kernel_calls, find_region_bounds,
+            insert_data_region, render_data_pragma,
         )
         kernels = {k["routine_name"].lower(): k for k in updated}
         kernel_names = set(kernels.keys())
         try:
             calls = extract_kernel_calls(driver_src, kernel_names)
-            clauses = derive_data_clauses(calls, kernels)
+            bounds = find_region_bounds(driver_src, kernel_names)
+            if bounds is not None:
+                # Liveness-optimal: `create` for arrays the host never touches
+                # outside the loop, copyin/copyout by host use before/after.
+                arrays = array_actuals(calls, kernels)
+                live = analyse_liveness(driver_src, arrays, bounds[0], bounds[1])
+                clauses = clauses_from_liveness(live)
+            else:
+                # No time loop found → INTENT-based conservative copy.
+                clauses = derive_data_clauses(calls, kernels)
             open_p, close_p = render_data_pragma(clauses, gpu_pragma)
             driver_with_acc = insert_data_region(driver_src, open_p, close_p, kernel_names)
             _save(_out("fortran_gpu") / f"driver_gpu{out_ext}", driver_with_acc)
