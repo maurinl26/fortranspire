@@ -271,3 +271,40 @@ def test_generated_param_extent_shim_compiles_under_openacc(tmp_path):
          "m.f90", "shim.f90"],
         cwd=tmp_path, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+def _cx_kernel():
+    return _kernel(routine_name="cx",
+                   intent_map={"n": "IN", "a": "IN", "b": "OUT"},
+                   arg_ctypes={"n": "int", "a": "float complex", "b": "double complex"},
+                   dimensions={"a": ["n"], "b": ["n"]})
+
+
+def test_complex_header_includes_complexh_and_real_only_does_not():
+    assert "#include <complex.h>" in render_header([_cx_kernel()])
+    assert "#include <complex.h>" not in render_header([_kernel()])  # real-only: no include
+
+
+def test_complex_header_c_compiles(tmp_path):
+    import shutil, subprocess
+    gcc = shutil.which("gcc") or shutil.which("cc")
+    if not gcc:
+        import pytest; pytest.skip("no C compiler")
+    (tmp_path / "kernel_c.h").write_text(render_header([_cx_kernel()]))
+    (tmp_path / "t.c").write_text('#include "kernel_c.h"\nint main(){return 0;}\n')
+    r = subprocess.run([gcc, "-I", str(tmp_path), "-fsyntax-only", "t.c"],
+                       cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+
+
+def test_device_pyx_transpiles_under_cython(tmp_path):
+    import importlib.util, subprocess, sys
+    if importlib.util.find_spec("Cython") is None:
+        import pytest; pytest.skip("Cython not installed")
+    pyx = tmp_path / "cx.pyx"
+    pyx.write_text(render_pyx([_cx_kernel()], "cx"))     # has a _device entry + CAI cast
+    r = subprocess.run([sys.executable, "-m", "cython", "-3", str(pyx),
+                        "-o", str(tmp_path / "cx.c")],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
+    assert (tmp_path / "cx.c").exists()

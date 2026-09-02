@@ -214,8 +214,11 @@ def render_header(kernels: List[dict], guard: str = "FORTRANSPIRE_KERNEL_C_H") -
     out: List[str] = [
         "/* Auto-generated C header — deterministic, do not edit by hand. */",
         f"#ifndef {guard}", f"#define {guard}", "",
-        '#ifdef __cplusplus', 'extern "C" {', "#endif", "",
     ]
+    # a `float complex` / `double complex` parameter needs the C99 `complex` macro.
+    if any("complex" in _ctype(k, a) for k in kernels for a in _args(k)):
+        out += ["#include <complex.h>", ""]
+    out += ['#ifdef __cplusplus', 'extern "C" {', "#endif", ""]
     for k in kernels:
         name = k["routine_name"]
         params = ", ".join(f"{_ctype(k, a)}* {a}" for a in _args(k)) or "void"
