@@ -33,13 +33,13 @@ def _c_type(dtype, kind) -> str:
         k = None  # symbolic KIND (e.g. `real(dp)`) — not folded by Loki
     name = str(getattr(dtype, "name", dtype) or "").upper()
     if "INTEGER" in name:
-        return "long" if k == 8 else "int"
+        return {1: "signed char", 2: "short", 8: "long"}.get(k, "int")
     if "LOGICAL" in name:
         return "int"
     if "REAL" in name or "DOUBLE" in name:
         return "float" if k == 4 else "double"
     if "COMPLEX" in name:
-        return "double complex"
+        return "float complex" if k == 4 else "double complex"
     return "double"
 
 

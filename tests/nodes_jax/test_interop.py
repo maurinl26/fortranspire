@@ -65,3 +65,24 @@ def _load(src: str, tmp_path, name: str):
         return importlib.import_module(name)
     finally:
         sys.path.remove(str(tmp_path))
+
+
+def test_as_jax_is_dtype_agnostic_including_half_precision(tmp_path):
+    """The JAX/DLPack bridge carries any dtype — including float16/bfloat16, which
+    the bind(c) Cython bridge cannot express. This is where ML half precision lives.
+    """
+    src = render_interop(["k"])
+    mod = _load(src, tmp_path, "iop_dt")
+    import jax
+    import jax.numpy as jnp
+
+    # (≤32-bit types are kept as-is; JAX downcasts 64-bit unless x64 is enabled,
+    # which is orthogonal to the half-precision point being made here.)
+    for dt in (np.float16, np.float32, np.int16, np.int8, np.complex64):
+        x = np.ones(3, dtype=dt)
+        jx = mod.as_jax(x)
+        assert isinstance(jx, jax.Array)
+        assert str(jx.dtype) == np.dtype(dt).name   # dtype preserved, no silent cast
+    # bfloat16 is a JAX-native dtype with no numpy equivalent — round-trips too.
+    bf = jnp.ones(3, dtype=jnp.bfloat16)
+    assert mod.as_jax(bf) is bf

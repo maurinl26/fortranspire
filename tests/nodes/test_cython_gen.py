@@ -178,3 +178,96 @@ def test_generated_device_shim_compiles_under_openacc(tmp_path):
          "m.f90", "shim.f90"],
         cwd=tmp_path, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
+
+
+# ── (1) module-PARAMETER extents: device entry via resolved symbols ───────────
+
+def _param_kernel(**over):
+    """A kernel dimensioned by a module PARAMETER (NRXN) resolved from a sibling."""
+    k = _kernel(
+        routine_name="rate",
+        intent_map={"x": "IN", "y": "OUT"},
+        arg_ctypes={"x": "double", "y": "double"},
+        dimensions={"x": ["NRXN"], "y": ["NRXN"]},
+        resolved={"nrxn": {"dtype": "integer", "rank": 0,
+                           "is_parameter": True, "module": "rbdata_mod"}},
+    )
+    k.update(over)
+    return k
+
+
+def test_module_parameter_extent_enables_the_device_entry():
+    s = render_shim([_param_kernel()], "rate_kernels")
+    assert 'bind(c, name="rate_c_device")' in s
+    assert "real(c_double), intent(in) :: x(NRXN)" in s          # explicit shape
+    assert "use rbdata_mod, only: NRXN" in s                     # imported into scope
+    assert "!$acc data deviceptr(x, y)" in s
+
+
+def test_non_parameter_extent_still_blocks_the_device_entry():
+    # a resolved symbol that is NOT a parameter (a plain module variable) is not a
+    # compile-time constant → cannot be an explicit extent → no device entry.
+    k = _param_kernel(resolved={"nrxn": {"dtype": "integer", "rank": 0,
+                                         "is_parameter": False, "module": "rbdata_mod"}})
+    s = render_shim([k], "rate_kernels")
+    assert "rate_c_device" not in s
+
+
+def test_extent_param_from_the_kernels_module_needs_no_extra_import():
+    k = _param_kernel(resolved={"nrxn": {"dtype": "integer", "rank": 0,
+                                         "is_parameter": True, "module": "rate_kernels"}})
+    s = render_shim([k], "rate_kernels")
+    assert "rate_c_device" in s
+    assert "use rate_kernels, only:" not in s        # already `use`d whole
+
+
+# ── (3) dtype coverage: complex64 / int8 / int16, half falls back to host ─────
+
+def test_complex64_and_small_int_dtypes_cross_the_device_bridge():
+    k = _kernel(routine_name="cx",
+                intent_map={"n": "IN", "a": "IN", "b": "OUT"},
+                arg_ctypes={"n": "int", "a": "float complex", "b": "short"},
+                dimensions={"a": ["n"], "b": ["n"]})
+    p = render_pyx([k], "cx")
+    assert '_device_ptr(a, "c8", 8)' in p            # complex64
+    assert '_device_ptr(b, "i2", 2)' in p            # int16
+    s = render_shim([k], "cx_kernels")
+    assert "complex(c_float_complex), intent(in) :: a(n)" in s
+    assert "integer(c_short), intent(out) :: b(n)" in s
+
+
+def test_unmappable_dtype_falls_back_to_host_no_device_entry():
+    # a ctype with no iso_c_binding equivalent (half precision) must NOT get a
+    # device entry (and never a silent wrong f8 check) — host entry still works.
+    k = _kernel(routine_name="hp",
+                intent_map={"n": "IN", "x": "IN", "y": "OUT"},
+                arg_ctypes={"n": "int", "x": "half", "y": "half"},
+                dimensions={"x": ["n"], "y": ["n"]})
+    assert "hp_c_device" not in render_shim([k], "hp_kernels")
+    assert "def hp_device" not in render_pyx([k], "hp")
+    assert "def hp(" in render_pyx([k], "hp")        # host path unaffected
+
+
+def test_generated_param_extent_shim_compiles_under_openacc(tmp_path):
+    """A device shim whose array extent is a module PARAMETER imported from a
+    sibling module must compile under -fopenacc (the `use …, only:` must resolve)."""
+    import shutil
+    import subprocess
+    gfortran = shutil.which("gfortran")
+    if not gfortran:
+        import pytest
+        pytest.skip("gfortran not available")
+    shim = render_shim([_param_kernel()], "rate_kernels")
+    mods = (
+        "module rbdata_mod\n  integer, parameter :: NRXN = 10\nend module\n"
+        "module rate_kernels\n  use rbdata_mod\ncontains\n"
+        "  subroutine rate(x, y)\n    real(8), intent(in) :: x(NRXN)\n"
+        "    real(8), intent(out) :: y(NRXN)\n    y = 2*x\n  end subroutine\nend module\n"
+    )
+    (tmp_path / "m.f90").write_text(mods)
+    (tmp_path / "shim.f90").write_text(shim)
+    r = subprocess.run(
+        [gfortran, "-fsyntax-only", "-fopenacc", "-ffree-line-length-none",
+         "m.f90", "shim.f90"],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr
