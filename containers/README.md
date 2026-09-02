@@ -30,3 +30,18 @@ not correctness.
 - **CI**: `.github/workflows/gpu-validate.yml` runs the validation inside this
   image on a self-hosted `gpu` runner.
 - **Cloud on-demand**: #122 (runpodctl). **Sovereign**: #43 (EWC).
+
+## On-demand cloud GPU (RunPod)
+
+No GPU node? Validate on an ephemeral RunPod GPU running the same image:
+
+```bash
+export RUNPOD_API_KEY=...          # runpod.io → settings → API keys
+bash scripts/gpu_validate_runpod.sh output/          # spins up, validates, TEARS DOWN
+bash scripts/gpu_validate_runpod.sh --dry-run output/  # print the plan, no pod
+```
+
+The pod is **always destroyed** (teardown trap) — no lingering cost. ⚠️ RunPod is
+a **US** cloud: use it for test/CI, not for porting client code under a
+sovereignty constraint — for that, use a sovereign GPU node
+(`FORTRANSPIRE_GPU_HOST`, EWC #43) with the same image. See #122.
