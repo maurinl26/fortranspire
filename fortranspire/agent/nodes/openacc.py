@@ -1,15 +1,41 @@
-"""Node 4 — insert OpenACC pragmas around the 2D loop nests and the time loop.
+"""Node 4 — insert OpenACC/OpenMP pragmas on the compute loops and the time loop.
 
-LLM-driven (`reasoning` stage — wrong `!$acc data` placement = silent GPU
-corruption, so it deserves Mistral-Large rather than Codestral).
+The **kernel** pragmas are now derived deterministically from the AST (see
+:mod:`.openacc_gen`): ``collapse(n)`` from the real nest depth, ``reduction``
+for scalar accumulators — the correctness fix; a missing reduction clause is a
+silent GPU race — and ``private`` for temporaries. The **driver** data region
+(where wrong ``!$acc data`` placement is silent corruption) is still LLM-driven.
 """
 from __future__ import annotations
 
+import os
 import re
-from typing import List
+import tempfile
+from typing import List, Optional
 
 from fortranspire.agent.nodes._common import SEP, _out, _save, _strip_markdown
 from fortranspire.agent.nodes._state import KernelInfo, Phase1State
+
+
+def _parse_kernel(source: str) -> Optional[object]:
+    """Parse one kernel's Fortran with Loki; None if it cannot be parsed."""
+    try:
+        from loki import Sourcefile
+    except Exception:  # noqa: BLE001
+        return None
+    fd, tmp = tempfile.mkstemp(suffix=".f90")
+    try:
+        os.write(fd, source.encode())
+        os.close(fd)
+        src = Sourcefile.from_file(tmp)
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
+    routines = list(src.routines) + \
+        [r for m in (src.modules or []) for r in (m.subroutines or [])]
+    return routines[0] if routines else None
 
 
 def openacc_insert_agent(state: Phase1State) -> dict:
@@ -98,39 +124,35 @@ def openacc_insert_agent(state: Phase1State) -> dict:
             updated.append({**kernel, "openacc_code": annotated})
             continue
 
-        # FD stencil → parallel-loop pragma (acc or omp) via LLM
-        pragma_directive = (
-            "!$acc parallel loop collapse(2)" if gpu_pragma == "acc"
-            else "!$omp target teams distribute parallel do collapse(2)"
-        )
-        prompt = HumanMessage(content=(
-            f"This is a 2D FD stencil subroutine (NOT ELEMENTAL — accesses neighbours).\n"
-            f"Add `{pragma_directive}` inside the subroutine body.\n"
-            f"INTENT(IN):    {[n for n,i in kernel['intent_map'].items() if i=='IN']}\n"
-            f"INTENT(INOUT): {[n for n,i in kernel['intent_map'].items() if i=='INOUT']}\n\n"
-            f"```fortran\n{src}\n```"
-        ))
+        # Compute loop → parallel-loop pragma, DERIVED from the AST (no LLM).
+        # collapse(n) from the real nest depth, reduction(op:var) for scalar
+        # accumulators (the correctness fix), private(tmp) for scalar temporaries.
         try:
-            with tracer.span(node=span_kernel, model=model_name) as span:
-                span.annotate(routine=name)
-                cfg = {"callbacks": [token_callback(span)]}
-                try:
-                    result = kernel_llm.invoke([kernel_system, prompt], config=cfg)
-                    annotated = _strip_markdown(result.annotated_fortran)
-                except Exception:
-                    # Backend without structured-output support — fall through to
-                    # raw invoke and strip Markdown fences off whatever comes back.
-                    resp = llm.invoke([kernel_system, prompt], config=cfg)
-                    annotated = _strip_markdown(resp.content)
-            # Safety net: strip any remaining PURE/ELEMENTAL the LLM left
+            from fortranspire.agent.nodes.openacc_gen import (
+                analyse_loop, insert_pragma, render_pragma,
+            )
+            from loki import FindNodes
+            from loki.ir.nodes import Loop
+
+            routine = _parse_kernel(src)
+            loops = FindNodes(Loop).visit(routine.body) if routine is not None else []
+            if not loops:
+                print(f"  ⏭ {name} — no compute loop found")
+                updated.append({**kernel, "openacc_code": src})
+                continue
+
+            outer = loops[0]
+            info = analyse_loop(outer, carried=bool(kernel.get("has_loop_carried_dep")))
+            pragma = render_pragma(info, gpu_pragma)
+            annotated = insert_pragma(src, str(outer.variable), pragma)
             annotated = re.sub(
                 r"^(\s*)(PURE\s+|ELEMENTAL\s+)+(SUBROUTINE\b)",
                 r"\1\3", annotated, flags=re.IGNORECASE | re.MULTILINE,
             )
-            print(f"  🚀 {name} → {pragma_directive}")
+            print(f"  🚀 {name} → {pragma}")
             updated.append({**kernel, "openacc_code": annotated})
-        except Exception as e:
-            print(f"  ❌ LLM failed for {name}: {e}")
+        except Exception as e:  # noqa: BLE001 - never break the pipeline on one kernel
+            print(f"  ❌ pragma derivation failed for {name}: {e}")
             updated.append({**kernel, "openacc_code": src, "error_log": str(e)})
 
     # Extension: .F90 when CPP feature flags are active
