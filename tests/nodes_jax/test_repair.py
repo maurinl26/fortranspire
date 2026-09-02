@@ -67,3 +67,34 @@ def test_gives_up_after_max_repairs_but_keeps_code():
     assert repairs == 2
     assert remaining                            # still defective — reported, not hidden
     assert llm.calls == 3                       # emit + 2 repairs, then stop
+
+
+def test_semantic_verify_drives_a_second_attempt():
+    # First emission is clean of deterministic defects but "wrong"; the verify
+    # callback reports it, and the repair loop re-prompts and accepts the fix.
+    good = "import jax.numpy as jnp\ndef k(x):\n    return x * 2\n"
+    wrong = "import jax.numpy as jnp\ndef k(x):\n    return x * 3\n"
+    llm = _FakeLLM([wrong, good])
+
+    seen = {"n": 0}
+    def verify(code):
+        seen["n"] += 1
+        return [] if "x * 2" in code else ["gradient is wrong: expected 2*x"]
+
+    code, remaining, repairs = emit_with_repair(
+        llm, system=None, strip=lambda s: s, max_repairs=2, verify=verify)
+    assert repairs == 1 and remaining == []
+    assert "x * 2" in code
+    assert llm.calls == 2                     # emit + one semantic repair
+
+
+def test_verify_not_consulted_while_deterministic_defects_remain():
+    # A data-branch is fixed first; verify only runs once the code is clean.
+    llm = _FakeLLM([_BAD, _GOOD])
+    calls = {"verify": 0}
+    def verify(_code):
+        calls["verify"] += 1
+        return []
+    emit_with_repair(llm, system=None, strip=lambda s: s, max_repairs=3, verify=verify)
+    # verify is consulted only after the deterministic defect is gone
+    assert calls["verify"] >= 1

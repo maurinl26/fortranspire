@@ -85,15 +85,26 @@ def emit_with_repair(
     max_repairs: int = 2,
     human: str = "Emit the module.",
     log: Callable[[str], None] = lambda _msg: None,
+    verify: Callable[[str], List[str]] | None = None,
 ) -> Tuple[str, List[str], int]:
-    """Emit, then repair any deterministic defect by re-prompting with it.
+    """Emit, then repair deterministic **and** semantic defects by re-prompting.
 
-    Returns ``(code, remaining_defects, n_repairs)``. ``remaining_defects`` is
-    empty when the code came back clean (possibly after a repair); non-empty
-    means the model could not fix it within ``max_repairs`` — the caller keeps
-    the code and lets gradcheck/lint report it.
+    Deterministic defects (syntax, branch-on-data, bad import) come from
+    :func:`emission_defects`. When those are clean and ``verify`` is given, it is
+    called with the code and returns semantic defects (e.g. a gradcheck failure)
+    — turning verification from a terminal gate into a feedback signal, so a
+    clean-but-*wrong* emission gets another informed try instead of just blocking.
+
+    Returns ``(code, remaining_defects, n_repairs)``; ``remaining_defects`` is
+    empty only when both checks pass.
     """
     from langchain_core.messages import AIMessage, HumanMessage
+
+    def _all_defects(c: str) -> List[str]:
+        d = emission_defects(c)
+        if not d and verify is not None:
+            d = verify(c)
+        return d
 
     messages = [system, HumanMessage(content=human)]
     response = llm.invoke(messages)
@@ -101,14 +112,14 @@ def emit_with_repair(
 
     repairs = 0
     for _ in range(max(0, max_repairs)):
-        defects = emission_defects(code)
+        defects = _all_defects(code)
         if not defects:
             break
-        log(f"    ↻ repairing {len(defects)} emission defect(s) (attempt {repairs + 1})")
+        log(f"    ↻ repairing {len(defects)} defect(s) (attempt {repairs + 1})")
         messages = messages + [AIMessage(content=code),
                                HumanMessage(content=_repair_message(defects))]
         response = llm.invoke(messages)
         code = strip(getattr(response, "content", str(response)))
         repairs += 1
 
-    return code, emission_defects(code), repairs
+    return code, _all_defects(code), repairs
