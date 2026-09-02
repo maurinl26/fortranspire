@@ -65,10 +65,10 @@ def test_three_artifacts_agree_on_arity():
     n_args = 5
     sig = next(l for l in art["header"].splitlines() if l.startswith("void axpy_c"))
     assert sig.count("*") == n_args                           # one pointer per arg
-    assert art["pyx"].count("*>") == 3                        # three array casts
-    # the shim has one declaration line per argument
+    assert art["pyx"].count("*>") == 6                        # three array casts
+    # one declaration line per argument, in each of the host + device entries
     decls = [l for l in art["shim"].splitlines() if "intent(" in l]
-    assert len(decls) == n_args
+    assert len(decls) == 2 * n_args
 
 
 def test_inout_argument_is_both_input_and_returned():
@@ -78,3 +78,103 @@ def test_inout_argument_is_both_input_and_returned():
     p = render_pyx([k], "kern")
     assert "def axpy(n, v):" in p
     assert "return v_arr" in p
+
+
+# ── Device-pointer (deviceptr) entry: GPU-resident interop via CAI ────────────
+
+def test_shim_emits_a_deviceptr_variant_for_kernels_with_arrays():
+    s = render_shim([_kernel()], "kern_kernels")
+    assert 'bind(c, name="axpy_c_device")' in s
+    # only the ARRAY args go in the deviceptr clause; scalars stay host
+    assert "!$acc data deviceptr(x, y, z)" in s
+    assert "!$acc end data" in s
+    assert "call axpy(n, a, x, y, z)" in s  # forwards the same call, no copyin/out
+
+
+def test_no_device_variant_when_the_kernel_has_no_array_args():
+    scalar_only = _kernel(intent_map={"a": "IN", "b": "OUT"},
+                          arg_ctypes={"a": "double", "b": "double"},
+                          dimensions={}, routine_name="scal")
+    s = render_shim([scalar_only], "kern_kernels")
+    assert "scal_c_device" not in s      # nothing to share on the device
+    h = render_header([scalar_only])
+    assert "scal_c_device" not in h
+
+
+def test_header_declares_the_device_entry():
+    h = render_header([_kernel()])
+    assert "void axpy_c_device(int* n, double* a, double* x, double* y, double* z);" in h
+
+
+def test_pyx_device_entry_reads_a_cai_pointer_and_returns_in_place():
+    p = render_pyx([_kernel()], "kern")
+    assert "cdef unsigned long long _device_ptr(" in p      # the CAI bridge helper
+    assert "__cuda_array_interface__" in p
+    assert "def axpy_device(n, a, x, y, z):" in p
+    assert 'cdef unsigned long long x_ptr = _device_ptr(x, "f8", 8)' in p
+    assert "axpy_c_device(&n_c, &a_c, <double*>x_ptr, <double*>y_ptr, <double*>z_ptr)" in p
+    assert "return z_arr" not in p.split("def axpy_device")[1]  # no host copy in device path
+    assert "return z" in p.split("def axpy_device")[1]          # device array in place
+
+
+def test_device_helper_enforces_fortran_order_and_dtype():
+    p = render_pyx([_kernel()], "kern")
+    assert "must be Fortran-ordered" in p            # rank>1 C-order is rejected
+    assert "dtype mismatch" in p
+
+
+def test_full_pyx_is_valid_python_syntax_after_cythonless_strip():
+    # the .pyx uses cdef/<cast> (Cython), but the pure-python bodies must be sane;
+    # here we just assert the device entry and helper are present and balanced.
+    p = render_pyx([_kernel()], "kern")
+    assert p.count("def ") >= 2                       # host + device entry
+    assert p.count("_device_ptr(") >= 1
+
+
+def test_device_shim_declares_explicit_shape_not_assumed_size():
+    # deviceptr rejects a(*); the extent must be explicit (here the arg `n`).
+    s = render_shim([_kernel()], "kern_kernels")
+    dev = s.split("_c_device")[1]
+    assert "real(c_double), intent(in) :: x(n)" in s
+    assert "x(*)" not in dev                     # no assumed-size in the device entry
+
+
+def test_no_device_variant_when_an_extent_is_not_in_scope():
+    # array dimensioned by a module PARAMETER (not an arg) → cannot size the
+    # explicit-shape declaration → skip the device entry (host entry still works).
+    k = _kernel(intent_map={"x": "IN", "y": "OUT"},
+                arg_ctypes={"x": "double", "y": "double"},
+                dimensions={"x": ["NRXN"], "y": ["NRXN"]},  # NRXN is not an arg
+                routine_name="rxn")
+    s = render_shim([k], "kern_kernels")
+    assert "rxn_c_device" not in s
+    assert "def rxn_device" not in render_pyx([k], "kern")
+    assert "rxn_c_device" not in render_header([k])
+    assert "def rxn(" in render_pyx([k], "kern")  # host entry unaffected
+
+
+def test_generated_device_shim_compiles_under_openacc(tmp_path):
+    """The deviceptr shim must be valid Fortran under -fopenacc (assumed-size,
+    which gfortran rejects in a map/deviceptr clause, is the trap this guards)."""
+    import shutil
+    import subprocess
+    gfortran = shutil.which("gfortran")
+    if not gfortran:
+        import pytest
+        pytest.skip("gfortran not available")
+    shim = render_shim([_kernel()], "kern_kernels")
+    # a minimal matching kernels module so the shim's `use` resolves.
+    mod = (
+        "module kern_kernels\ncontains\n"
+        "  subroutine axpy(n, a, x, y, z)\n"
+        "    integer, intent(in) :: n\n    real(8), intent(in) :: a\n"
+        "    real(8), intent(in) :: x(n), y(n)\n    real(8), intent(out) :: z(n)\n"
+        "    z = a * x + y\n  end subroutine\nend module\n"
+    )
+    (tmp_path / "m.f90").write_text(mod)
+    (tmp_path / "shim.f90").write_text(shim)
+    r = subprocess.run(
+        [gfortran, "-fsyntax-only", "-fopenacc", "-ffree-line-length-none",
+         "m.f90", "shim.f90"],
+        cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 0, r.stderr

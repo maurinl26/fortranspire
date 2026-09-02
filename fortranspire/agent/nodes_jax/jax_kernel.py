@@ -194,10 +194,21 @@ def jax_kernel_agent(state: Phase2State) -> dict:
     # One file per kernel, plus a consolidated module for the caller.
     out_dir = _out("jax")
     module_parts: List[str] = []
+    emitted_names: List[str] = []
     for kernel in updated:
         if kernel.get("jax_code"):
             _save(out_dir / f"{kernel['routine_name']}.py", kernel["jax_code"])
             module_parts.append(kernel["jax_code"])
+            emitted_names.append(kernel["routine_name"])
+
+    # DLPack / __cuda_array_interface__ interop shim (deterministic, no LLM):
+    # lets the pure kernels be called on CuPy / PyTorch / Numba device arrays
+    # zero-copy — interop via the standard protocol, not a CuPy dependency.
+    if emitted_names:
+        from fortranspire.agent.nodes_jax.interop import render_interop
+        _save(out_dir / "_interop.py", render_interop(emitted_names))
+        print(f"  ✓ {'_interop.py':<28} DLPack/CAI bridge "
+              f"(CuPy/PyTorch/Numba, zero-copy)")
 
     print(f"\n  {derived} derived (no LLM) + {emitted} emitted (LLM) → {out_dir}")
 
