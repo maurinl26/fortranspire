@@ -22,19 +22,24 @@ on:
 
 jobs:
   gpu-validate:
-    # A machine with an NVIDIA GPU and the NVIDIA HPC SDK (nvfortran) on PATH.
+    # A self-hosted runner with an NVIDIA GPU, Docker and the NVIDIA container
+    # toolkit. The steps run INSIDE the pinned nvfortran image (issue #121), so
+    # nvfortran / gfortran / meson / ninja are present and reproducible.
     runs-on: [self-hosted, gpu]
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/fortranspire-nvhpc:latest
+      options: --gpus all
     steps:
       - uses: actions/checkout@v4
 
       - name: Environment
         run: |
-          nvidia-smi || { echo "::error::no NVIDIA GPU on this runner"; exit 1; }
-          nvfortran --version | head -1 || { echo "::error::nvfortran not found"; exit 1; }
+          nvidia-smi || { echo "::error::the container cannot see a GPU (--gpus all + nvidia toolkit?)"; exit 1; }
+          nvfortran --version | head -1 || { echo "::error::nvfortran not found in the image"; exit 1; }
           gfortran --version | head -1
 
-      - name: Install fortranspire + oracle toolchain
-        run: pip install ".[jax]" meson ninja pytest
+      - name: Use the checked-out fortranspire (current code)
+        run: pip install -e .
 
       - name: Generate the GPU port
         env:

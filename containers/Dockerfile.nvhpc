@@ -1,10 +1,19 @@
 # NVIDIA HPC SDK — provides nvfortran (OpenACC) + CUDA, for the GPU VALIDATION
-# step. The existing Dockerfile.hpc is a JAX image (Phase 2 on GPU); it has no
-# nvfortran, so it cannot compile or numerically validate the Phase 1 GPU port.
-# This image can: build the port with `nvfortran -acc` and RUN the equivalence
-# harness (GPU vs CPU) — see scripts/gpu_validate.sh.
-FROM nvcr.io/nvidia/nvhpc:24.7-devel-cuda12.5-ubuntu22.04
+# step (issue #121). The existing Dockerfile.hpc is a JAX image (Phase 2 on GPU);
+# it has no nvfortran, so it cannot compile or numerically validate the Phase 1
+# GPU port. This image can: build the port with `nvfortran -acc` and RUN the
+# equivalence harness (GPU vs CPU) — see scripts/gpu_validate.sh.
+#
+# The base tag is an ARG so it is pinned in one place and easy to bump. The NVHPC
+# images live on nvcr.io; the build host may need `docker login nvcr.io` (NGC).
+ARG NVHPC_TAG=24.7-devel-cuda12.5-ubuntu22.04
+FROM nvcr.io/nvidia/nvhpc:${NVHPC_TAG}
 
+LABEL org.opencontainers.image.title="fortranspire-nvhpc" \
+      org.opencontainers.image.description="nvfortran (OpenACC) + gfortran + f2py for GPU validation" \
+      org.opencontainers.image.source="https://github.com/maurinl26/fortranspire"
+
+# CPU oracle (gfortran) + Python + the f2py meson backend deps.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         gfortran python3 python3-pip python3-venv ninja-build git \
     && rm -rf /var/lib/apt/lists/*
@@ -12,8 +21,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /work
 COPY . /work
 
-# fortranspire + the CPU oracle toolchain (f2py needs the meson backend).
+# fortranspire + the CPU-oracle toolchain (f2py uses the meson backend on numpy 2.x).
 RUN pip3 install --no-cache-dir ".[jax]" meson ninja pytest
+
+# Fail the build early if the toolchain the validation relies on is not present —
+# a wrong base tag must not produce a green-but-useless image.
+RUN set -e; \
+    command -v nvfortran >/dev/null || { echo "FATAL: nvfortran missing"; exit 1; }; \
+    command -v gfortran  >/dev/null || { echo "FATAL: gfortran missing";  exit 1; }; \
+    command -v meson     >/dev/null || { echo "FATAL: meson missing";     exit 1; }; \
+    command -v ninja     >/dev/null || { echo "FATAL: ninja missing";     exit 1; }; \
+    nvfortran --version | head -1
 
 # nvfortran is on PATH via the NVHPC image; the CPU oracle is gfortran.
 ENV FC=nvfortran
