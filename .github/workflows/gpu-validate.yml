@@ -1,0 +1,54 @@
+# GPU validation — the step the dev machine cannot do.
+#
+# Compiles a generated Phase-1 GPU port with nvfortran AND runs the numerical
+# equivalence harness (GPU output vs the original Fortran). This is the only
+# thing that turns "compiles" into "verified"; a data race — a missing
+# `reduction` clause, a wrong pragma — compiles fine and is silently wrong, so a
+# green gfortran syntax check is not enough.
+#
+# Opt-in: it needs a self-hosted runner with an NVIDIA GPU and the HPC SDK
+# (label `gpu`). It does NOT run on the default ubuntu runners — they have no
+# GPU and no nvfortran, so there is nothing to validate there. Trigger it by
+# hand (Actions → GPU validation → Run) once such a runner is attached.
+name: GPU validation (nvfortran + equivalence)
+
+on:
+  workflow_dispatch:
+    inputs:
+      kernel:
+        description: "Fortran kernel to port and numerically validate"
+        required: true
+        default: "tests/fixtures/equivalence/wave_kernels/original.f90"
+
+jobs:
+  gpu-validate:
+    # A machine with an NVIDIA GPU and the NVIDIA HPC SDK (nvfortran) on PATH.
+    runs-on: [self-hosted, gpu]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          nvidia-smi || { echo "::error::no NVIDIA GPU on this runner"; exit 1; }
+          nvfortran --version | head -1 || { echo "::error::nvfortran not found"; exit 1; }
+          gfortran --version | head -1
+
+      - name: Install fortranspire + oracle toolchain
+        run: pip install ".[jax]" meson ninja pytest
+
+      - name: Generate the GPU port
+        env:
+          MISTRAL_API_KEY: ${{ secrets.MISTRAL_API_KEY }}
+        run: fortranspire gpu "${{ github.event.inputs.kernel }}"
+
+      - name: Compile with nvfortran AND run the equivalence harness
+        run: bash scripts/gpu_validate.sh output/
+
+      - name: Upload validation log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-validation
+          path: |
+            output/fortran_gpu/validation.log
+            output/tests/

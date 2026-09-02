@@ -1,0 +1,20 @@
+# NVIDIA HPC SDK — provides nvfortran (OpenACC) + CUDA, for the GPU VALIDATION
+# step. The existing Dockerfile.hpc is a JAX image (Phase 2 on GPU); it has no
+# nvfortran, so it cannot compile or numerically validate the Phase 1 GPU port.
+# This image can: build the port with `nvfortran -acc` and RUN the equivalence
+# harness (GPU vs CPU) — see scripts/gpu_validate.sh.
+FROM nvcr.io/nvidia/nvhpc:24.7-devel-cuda12.5-ubuntu22.04
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        gfortran python3 python3-pip python3-venv ninja-build git \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /work
+COPY . /work
+
+# fortranspire + the CPU oracle toolchain (f2py needs the meson backend).
+RUN pip3 install --no-cache-dir ".[jax]" meson ninja pytest
+
+# nvfortran is on PATH via the NVHPC image; the CPU oracle is gfortran.
+ENV FC=nvfortran
+ENTRYPOINT ["bash"]

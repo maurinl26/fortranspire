@@ -270,7 +270,10 @@ def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
     if level != "gpu_compiled":
         print(f"    🔧 Check output/fortran_gpu/validation.log for errors")
         print(f"    📋 gfortran -O2 -fsyntax-only output/fortran_gpu/module_kernels_gpu.f90")
-    print(f"    🖥️  GPU compile: rsync -a output/ user@<gpu-node>:~/k/ && ssh user@<gpu-node> 'cd ~/k && bash compile_gpu.sh'")
+    print(f"    🖥️  GPU compile : rsync -a output/ user@<gpu-node>:~/k/ && ssh user@<gpu-node> 'cd ~/k && bash compile_gpu.sh'")
+    print(f"    🔬 GPU VALIDATE: on the GPU node → bash scripts/gpu_validate.sh output/")
+    print(f"                     (compiles with nvfortran AND runs the equivalence")
+    print(f"                      harness — the only step that proves correctness)")
     print(f"    📊 Bench       : fortranspire bench output/")
     print(f"    🐍 Cython      : cd output && python setup.py build_ext --inplace")
     print(f"{'═' * 60}\n")
