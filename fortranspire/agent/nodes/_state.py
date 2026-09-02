@@ -41,6 +41,7 @@ class Phase1State(TypedDict):
     openacc_fortran: str               # Fortran avec pragmas OpenACC (kernels + driver data region)
     cython_pyx: str                    # Contenu .pyx
     cython_header: str                 # Contenu kernel_c.h (iso_c_binding)
+    cython_shim: str                   # bind(c) Fortran C-API shim
     cython_setup: str                  # pyproject.toml build config
     # Validation
     validation_passed: bool
