@@ -111,12 +111,25 @@ def jax_kernel_agent(state: Phase2State) -> dict:
     updated: List[JaxKernelInfo] = []
     emitted = 0
 
+    from fortranspire.agent.nodes_jax.jax_skeleton import lower_kernel
+
+    derived = 0
     for kernel in state.get("kernel_results", []):
         name = kernel["routine_name"]
 
         if kernel.get("purity") == "blocked":
             print(f"  ⏭ {name:<28} blocked by functionalize — not sent to the LLM")
             updated.append({**kernel, "status": "skipped"})
+            continue
+
+        # Deterministic skeleton first: an element-wise kernel is derived from
+        # the loop/expression trees, no LLM, no emission-ceiling risk. Only what
+        # cannot be lowered yet (stencils, scan, gather) reaches the model.
+        skeleton = lower_kernel(kernel)
+        if skeleton is not None:
+            derived += 1
+            print(f"  ✓ {name:<28} {len(skeleton)} chars · derived (no LLM)")
+            updated.append({**kernel, "jax_code": skeleton, "status": "pending"})
             continue
 
         if llm is None:
@@ -162,7 +175,7 @@ def jax_kernel_agent(state: Phase2State) -> dict:
             _save(out_dir / f"{kernel['routine_name']}.py", kernel["jax_code"])
             module_parts.append(kernel["jax_code"])
 
-    print(f"\n  {emitted} kernel(s) emitted → {out_dir}")
+    print(f"\n  {derived} derived (no LLM) + {emitted} emitted (LLM) → {out_dir}")
 
     return {
         "kernel_results": updated,
