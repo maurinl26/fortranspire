@@ -106,20 +106,25 @@ def emit_with_repair(
             d = verify(c)
         return d
 
-    messages = [system, HumanMessage(content=human)]
-    response = llm.invoke(messages)
-    code = strip(getattr(response, "content", str(response)))
+    def _emit(msgs) -> str:
+        response = llm.invoke(msgs)
+        return strip(getattr(response, "content", str(response)))
+
+    base = [system, HumanMessage(content=human)]
+    # N-best over the repair sequence: the successive attempts are diverse (the
+    # conversation grows), so keep the *best* candidate seen — fewest remaining
+    # defects — never a later, worse one. Deterministic under temperature 0.
+    best_code = _emit(base)
+    best_defects = _all_defects(best_code)
 
     repairs = 0
-    for _ in range(max(0, max_repairs)):
-        defects = _all_defects(code)
-        if not defects:
-            break
-        log(f"    ↻ repairing {len(defects)} defect(s) (attempt {repairs + 1})")
-        messages = messages + [AIMessage(content=code),
-                               HumanMessage(content=_repair_message(defects))]
-        response = llm.invoke(messages)
-        code = strip(getattr(response, "content", str(response)))
+    while best_defects and repairs < max(0, max_repairs):
         repairs += 1
+        log(f"    ↻ repairing {len(best_defects)} defect(s) (attempt {repairs})")
+        candidate = _emit(base + [AIMessage(content=best_code),
+                                  HumanMessage(content=_repair_message(best_defects))])
+        cand_defects = _all_defects(candidate)
+        if len(cand_defects) < len(best_defects):
+            best_code, best_defects = candidate, cand_defects
 
-    return code, _all_defects(code), repairs
+    return best_code, best_defects, repairs
