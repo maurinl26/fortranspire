@@ -248,9 +248,17 @@ def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
     }
     final_state = translation_app_phase1.invoke(initial_state)
 
-    passed = final_state.get("validation_passed", False)
-    status_icon = "✅" if passed else "⚠️"
-    status_text = "PASSED" if passed else "FAILED (see validation.log)"
+    # Honest verdict: never call a GPU port "PASSED" when it was only
+    # syntax-checked, or only compiled (compilation is not correctness).
+    level = final_state.get("validation_level", "generated")
+    verdict = {
+        "gpu_compiled": ("✅", "GPU-COMPILED (nvfortran) — NOT numerically "
+                               "validated (run the equivalence harness on the GPU)"),
+        "syntax_only":  ("⚠️", "SYNTAX-CHECKED ONLY (gfortran) — NOT GPU-compiled, "
+                               "NOT run, NOT numerically validated"),
+        "generated":    ("⚠️", "GENERATED ONLY — not compiled or checked"),
+    }.get(level, ("⚠️", "GENERATED ONLY — not compiled or checked"))
+    status_icon, status_text = verdict
 
     print(f"\n{'═' * 60}")
     print(f"  {status_icon} Phase 1 Complete")
@@ -259,7 +267,7 @@ def translate_file_gpu(filepath: str, *, gpu_pragma: str = "acc"):
     print(f"  Output     : output/fortran_gpu/  +  output/cython/")
     print(f"")
     print(f"  Next steps:")
-    if not passed:
+    if level != "gpu_compiled":
         print(f"    🔧 Check output/fortran_gpu/validation.log for errors")
         print(f"    📋 gfortran -O2 -fsyntax-only output/fortran_gpu/module_kernels_gpu.f90")
     print(f"    🖥️  GPU compile: rsync -a output/ user@<gpu-node>:~/k/ && ssh user@<gpu-node> 'cd ~/k && bash compile_gpu.sh'")

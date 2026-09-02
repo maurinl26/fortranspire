@@ -230,7 +230,8 @@ def validation_agent(state: Phase1State) -> dict:
     out_dir     = Path("output").resolve()
     gpu_dir     = out_dir / "fortran_gpu"
     log_lines:  List[str] = []
-    compiled    = False
+    compiled    = False           # a real nvfortran compile happened
+    syntax_ok   = False           # gfortran -fopenacc syntax check passed
 
     # Determine filenames — prefer split module+driver, check both .f90 and .F90 (CPP)
     module_file = next(
@@ -269,12 +270,15 @@ def validation_agent(state: Phase1State) -> dict:
 
     if sources_to_check:
         ok_no_acc, ok_with_acc, gfc_log = _gfortran_local_check(sources_to_check)
+        syntax_ok = ok_with_acc
         log_lines.append("\n=== gfortran local check ===")
         log_lines.append(gfc_log)
         flavor1_status = "OK" if ok_no_acc   else "FAIL"
         flavor2_status = "OK" if ok_with_acc else "FAIL"
         print(f"  Flavor 1 (CPU, no !$acc pragmas) : {flavor1_status}")
         print(f"  Flavor 2 (gfortran -fopenacc)    : {flavor2_status}")
+        print("  NOTE: this is a SYNTAX check only — gfortran does not build GPU "
+              "code, run it, or verify results.")
         if not ok_no_acc:
             print("  !! Fortran syntax errors — fix before GPU compilation")
         elif not ok_with_acc:
@@ -402,12 +406,36 @@ def validation_agent(state: Phase1State) -> dict:
             ok   = "OK" if size > 50 else "??"
             print(f"    [{ok}] {str(rel):<45} {size:>7} bytes")
 
-    status = "COMPILED" if compiled else "ARTIFACTS_READY (run compile_gpu.sh on GPU node)"
+    # Honest verdict — three distinct levels, never conflated:
+    #   gpu_compiled : nvfortran actually built it (Level 1/2). Still NOT a
+    #                  correctness proof — a data race (e.g. a missing reduction
+    #                  clause) compiles fine and is silently wrong on the GPU.
+    #   syntax       : gfortran -fopenacc parsed it. Not a GPU build at all.
+    #   none         : generated only.
+    # Numerical validation (does the GPU output match the original?) requires
+    # RUNNING the equivalence harness on a real GPU node — not done here.
+    if compiled:
+        level = "gpu_compiled"
+        status = ("GPU-COMPILED (nvfortran) — NOT numerically validated. "
+                  "Run the equivalence harness on the GPU node to check results.")
+    elif syntax_ok:
+        level = "syntax_only"
+        status = ("SYNTAX-CHECKED ONLY (gfortran -fopenacc). NOT GPU-compiled, "
+                  "NOT run, NOT numerically validated. Compile with nvfortran on "
+                  "a GPU node (bash compile_gpu.sh).")
+    else:
+        level = "generated"
+        status = "GENERATED ONLY — not compiled or checked."
     print(f"\n  Status : {status}")
     print(SEP2 + "\n")
 
     return {
-        "validation_passed": compiled,
-        "validation_log":    log,
-        "executed_agents":   list(state.get("executed_agents", [])) + ["validation"],
+        # Kept for back-compat, but it means COMPILED, never "correct".
+        "validation_passed":      compiled,
+        "validation_level":       level,          # generated | syntax_only | gpu_compiled
+        "gpu_compiled":           compiled,
+        "syntax_ok":              syntax_ok,
+        "numerically_validated":  False,          # never true without a GPU run
+        "validation_log":         log,
+        "executed_agents":        list(state.get("executed_agents", [])) + ["validation"],
     }
