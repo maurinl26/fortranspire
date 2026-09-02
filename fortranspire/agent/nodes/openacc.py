@@ -58,31 +58,13 @@ def openacc_insert_agent(state: Phase1State) -> dict:
         gpu_pragma = "acc"
 
     pragma_label   = "OpenACC" if gpu_pragma == "acc" else "OpenMP target"
-    kernel_prompt  = "openacc_kernel" if gpu_pragma == "acc" else "openmp_kernel"
-    driver_prompt  = "openacc_driver" if gpu_pragma == "acc" else "openmp_driver"
-    span_kernel    = "openacc_kernel" if gpu_pragma == "acc" else "openmp_kernel"
-    span_driver    = "openacc_driver" if gpu_pragma == "acc" else "openmp_driver"
 
     print(f"\n{SEP}")
-    print(f"  [GPU pragmas: {pragma_label}] Inserting kernel + driver data region")
+    print(f"  [GPU pragmas: {pragma_label}] Inserting kernel + driver data region "
+          "(deterministic, no LLM)")
     print(SEP)
 
-    # Reasoning stage: data-flow analysis to place data clauses correctly
-    # around the time loop. Wrong placement = silent GPU corruption.
-    from fortranspire.agent.schemas import OpenACCDriverOutput, OpenACCKernelOutput
-    from fortranspire.llm import get_llm
-    from fortranspire.observability import tracer
-    from fortranspire.observability.llm_callback import token_callback
-    from fortranspire.prompts.loader import load_prompt
-    from langchain_core.messages import SystemMessage, HumanMessage
-    llm = get_llm("reasoning")
-    kernel_llm = llm.with_structured_output(OpenACCKernelOutput)
-    driver_llm = llm.with_structured_output(OpenACCDriverOutput)
-    model_name = getattr(llm, "model_name", None) or getattr(llm, "model", None)
-
     # ── 4a : Kernel subroutines ───────────────────────────────────────────────
-    kernel_system = SystemMessage(content=load_prompt(kernel_prompt, version="v2"))
-
     updated: List[KernelInfo] = []
     for kernel in state.get("kernel_results", []):
         src = kernel.get("pure_elemental_code") or kernel["fortran_code"]
@@ -159,32 +141,30 @@ def openacc_insert_agent(state: Phase1State) -> dict:
     feature_flags = state.get("ast_info", {}).get("feature_flags", {})
     out_ext = ".F90" if feature_flags else ".f90"
 
-    # ── 4b : Driver data region ───────────────────────────────────────────────
+    # ── 4b : Driver data region — DERIVED from INTENT (no LLM) ────────────────
+    # A wrong copyin/copyout is silent GPU corruption, and the LLM was guessing it
+    # from a prompt without the INTENT. Derive it: each array's role is its
+    # formal argument's INTENT, aggregated across the kernel calls in the loop.
     driver_src = state.get("driver_fortran", "")
     driver_with_acc = ""
 
     if driver_src:
-        driver_system = SystemMessage(content=load_prompt(driver_prompt, version="v2"))
-        driver_data_pragma = "!$acc data" if gpu_pragma == "acc" else "!$omp target data"
-        driver_prompt_msg = HumanMessage(content=(
-            f"Add a `{driver_data_pragma}` region around the time loop.\n"
-            f"Kernel subroutines called inside the loop: {state.get('kernel_names', [])}\n\n"
-            f"```fortran\n{driver_src}\n```"
-        ))
+        from fortranspire.agent.nodes.data_region import (
+            derive_data_clauses, extract_kernel_calls, insert_data_region,
+            render_data_pragma,
+        )
+        kernels = {k["routine_name"].lower(): k for k in updated}
+        kernel_names = set(kernels.keys())
         try:
-            with tracer.span(node=span_driver, model=model_name) as span:
-                cfg = {"callbacks": [token_callback(span)]}
-                try:
-                    result = driver_llm.invoke([driver_system, driver_prompt_msg], config=cfg)
-                    driver_with_acc = _strip_markdown(result.annotated_fortran)
-                except Exception:
-                    resp = llm.invoke([driver_system, driver_prompt_msg], config=cfg)
-                    driver_with_acc = _strip_markdown(resp.content)
+            calls = extract_kernel_calls(driver_src, kernel_names)
+            clauses = derive_data_clauses(calls, kernels)
+            open_p, close_p = render_data_pragma(clauses, gpu_pragma)
+            driver_with_acc = insert_data_region(driver_src, open_p, close_p, kernel_names)
             _save(_out("fortran_gpu") / f"driver_gpu{out_ext}", driver_with_acc)
-            print(f"  driver → {driver_data_pragma} region inserted")
-        except Exception as e:
+            print(f"  driver → {open_p}")
+        except Exception as e:  # noqa: BLE001 - never break the pipeline
             driver_with_acc = driver_src
-            print(f"  LLM failed for driver data region: {e}")
+            print(f"  driver data-region derivation failed: {e}")
     else:
         print("  No driver.f90 found — skipping driver data region")
 
