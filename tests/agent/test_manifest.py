@@ -49,3 +49,32 @@ def test_manifest_never_leaks_the_api_key():
     blob = str(m).lower()
     assert "api_key" not in blob and "authorization" not in blob
     assert m["model"]["endpoint_host"]  # host only, no scheme/key
+
+
+def test_gpu_manifest_records_level_and_the_bit_exact_caveat():
+    state = {
+        "kernel_results": [{"routine_name": "dotp", "status": "pending"}],  # no jax_code
+        "is_program": False,                       # modular → extractor did not run LLM
+        "validation_level": "gpu_compiled",
+        "executed_agents": ["parser", "openacc", "cython_wrapper", "validation"],
+    }
+    m = build_manifest(state, input_path="/tmp/x.f90", target="gpu")
+    assert m["target"] == "gpu"
+    assert m["llm_used"] is False                  # deterministic path
+    assert m["reproducible"] is True
+    assert m["gpu"]["validation_level"] == "gpu_compiled"
+    assert m["gpu"]["runtime_bit_reproducible"] is False    # parallel reductions
+    assert "non-associative" in m["gpu"]["runtime_note"]
+
+
+def test_monolithic_gpu_run_uses_the_llm_extractor():
+    state = {"kernel_results": [], "is_program": True,   # PROGRAM → extractor LLM
+             "executed_agents": ["extractor"]}
+    import os
+    os.environ.pop("MISTRAL_MODEL", None)
+    import importlib, fortranspire.config as cfg
+    importlib.reload(cfg)
+    m = build_manifest(state, input_path="/tmp/x.f90", target="gpu")
+    assert m["llm_used"] is True                    # extractor ran
+    # temp 0 default + moving `-latest` → not reproducible without pinning
+    assert m["reproducible"] is False
